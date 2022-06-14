@@ -12,9 +12,9 @@ def get_configs():
     model_dict.conditional = True
     model_dict.nonlinearity = 'swish'
     model_dict.savepath = 'am_mnist_subvpsde'
-    model_dict.s = 'subvpsde'
-    model_dict.w = w4
-    model_dict.dwdt = dw4dt
+    model_dict.s = 'generic'
+    model_dict.w = w3
+    model_dict.dwdt = dw3dt
     model_dict.q_t = subvpsde
     
     data_dict = dotdict()

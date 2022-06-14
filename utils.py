@@ -80,7 +80,7 @@ def train(net, train_loader, optim, ema, epochs, device, config):
         wandb.log({'epoch': epoch}, step=step)
         
         net.eval()
-        x_1 = torch.randn(64, config.data.num_channels, config.data.image_size, config.data.image_size).to(device)
+        x_1 = torch.randn(64, x.shape[1], x.shape[2], x.shape[3]).to(device)
         img, _, _ = solve_ode(device, s, x_1, [])
         wandb.log({"examples": [wandb.Image(stack_imgs(img))]})
 
