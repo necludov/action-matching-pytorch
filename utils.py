@@ -37,6 +37,7 @@ def loss_AM(s, x, w, dwdt, q_t):
     u = (torch.rand([1,1]) + math.sqrt(2)*torch.arange(bs).view(-1,1)) % 1
     t = u*(t_1-t_0) + t_0
     t = t.to(device)
+    while (x.dim() > t.dim()): t = t.unsqueeze(-1)
     x_t = q_t(x, t)
     x_t.requires_grad, t.requires_grad = True, True
     dsdt, dsdx = torch.autograd.grad(s(t, x_t).sum(), [t, x_t], create_graph=True, retain_graph=True)
@@ -145,6 +146,12 @@ def get_dataset_MNIST(config):
         drop_last=True
     )
     return train_loader, val_loader
+
+def log_losses(title, loss, step):
+    title = f'{title}_losses'
+    
+    if loss is not None:
+        wandb.log({f'{title}/loss_sm': loss}, step=step)
 
 def mkdir(path):
     if not os.path.exists(path):

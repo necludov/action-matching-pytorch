@@ -11,11 +11,11 @@ def get_configs():
     model_dict.resamp_with_conv = True
     model_dict.conditional = True
     model_dict.nonlinearity = 'swish'
-    model_dict.savepath = 'am_mnist'
-    model_dict.s = 'generic'
-    model_dict.w = w1
-    model_dict.dw = dw1dt
-    model_dict.q_t = vpsde
+    model_dict.savepath = 'am_mnist_subvpsde'
+    model_dict.s = 'subvpsde'
+    model_dict.w = w4
+    model_dict.dwdt = dw4dt
+    model_dict.q_t = subvpsde
     
     data_dict = dotdict()
     data_dict.image_size = 32
