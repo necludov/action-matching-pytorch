@@ -20,9 +20,8 @@ train_loader, val_loader = get_dataset_MNIST(config)
 net = nn.DataParallel(ANet(config))
 net.to(device)
 
-optim = torch.optim.Adam(net.parameters(), lr=2e-4, betas=(0.9, 0.999), eps=1e-8, weight_decay=0)
+optim = torch.optim.Adam(net.parameters(), lr=config.train.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0)
 ema_ = ema.ExponentialMovingAverage(net.parameters(), decay=0.9999)
-sched = lrsc.StepLR(optim, step_size=30, gamma=0.1)
 
 wandb.init(project='mnist')
 train(net, train_loader, optim, ema_, 1000, device, config)

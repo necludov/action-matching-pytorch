@@ -90,7 +90,6 @@ class ActionNet(nn.Module):
             # Input is in [0, 1]
             h = 2 * x - 1.
 
-#         h = torch.hstack([x,x**2])
         # Downsampling block
         h = modules[m_idx](h)
         m_idx += 1

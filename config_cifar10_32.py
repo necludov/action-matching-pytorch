@@ -10,10 +10,12 @@ def get_configs():
     model_dict.resamp_with_conv = True
     model_dict.conditional = True
     model_dict.nonlinearity = 'swish'
-    model_dict.sigma_max = 50
-    model_dict.sigma_min = 0.01
-    model_dict.num_scales = 1000
-    model_dict.savepath = 'am_cifar'
+    model_dict.savepath = 'am_cifar_vpsde'
+    model_dict.s = 'generic'
+    model_dict.w = w1
+    model_dict.dwdt = dw1dt
+    model_dict.q_t = vpsde
+    
     data_dict = dotdict()
     data_dict.image_size = 32
     data_dict.num_channels = 3
@@ -23,8 +25,8 @@ def get_configs():
     data_dict.norm_std = (0.5, 0.5, 0.5)
     train_dict = dotdict()
     train_dict.grad_clip = 1.0
-    train_dict.warmup = 5000
-    train_dict.lr = 2e-4
+    train_dict.warmup = 0
+    train_dict.lr = 1e-4
     config_dict = dotdict()
     config_dict.model = model_dict
     config_dict.data = data_dict

@@ -27,7 +27,6 @@ class ANet(nn.Module):
         
         t = t.reshape(-1)
         t = t.expand(bs)
-        
         return self.anet(x, t)
 
 def loss_AM(s, x, w, dwdt, q_t):
@@ -40,7 +39,8 @@ def loss_AM(s, x, w, dwdt, q_t):
     while (x.dim() > t.dim()): t = t.unsqueeze(-1)
     x_t = q_t(x, t)
     x_t.requires_grad, t.requires_grad = True, True
-    dsdt, dsdx = torch.autograd.grad(s(t, x_t).sum(), [t, x_t], create_graph=True, retain_graph=True)
+    s_t = s(t, x_t)
+    dsdt, dsdx = torch.autograd.grad(s_t.sum(), [t, x_t], create_graph=True, retain_graph=True)
     x_t, t = x_t.detach(), t.detach()
 
     t_0 = t_0*torch.ones(bs).to(device)
@@ -51,7 +51,7 @@ def loss_AM(s, x, w, dwdt, q_t):
     
     dims_to_reduce = [i + 1 for i in range(x.dim()-1)]
     loss = (0.5*(dsdx**2).sum(dims_to_reduce, keepdim=True) + dsdt.sum(dims_to_reduce, keepdim=True))*w(t)
-    loss = loss.squeeze() + s(t,x_t).squeeze()*dwdt(t).squeeze()
+    loss = loss.squeeze() + s_t.squeeze()*dwdt(t).squeeze()
     loss = loss*(t_1-t_0).squeeze()
     loss = loss + (-s(t_1,x_1).squeeze()*w(t_1).squeeze() + s(t_0,x_0).squeeze()*w(t_0).squeeze())
     return loss.mean()
@@ -223,7 +223,7 @@ def solve_ode(device, s, x, i_inter, ts=1.0, tf=0.0, dt=-1e-3):
         if i in i_inter:
             x_inter.append(x.clone())
             t_inter.append(t)
-        tt = (t*torch.ones([x.shape[0],1,1,1])).to(device)
+        tt = (t*torch.ones([x.shape[0],1])).to(device)
         x.requires_grad = True
         x.data += dt * torch.autograd.grad(s(tt, x).sum(), x)[0].detach()
         x = x.detach()

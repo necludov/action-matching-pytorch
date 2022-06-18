@@ -26,8 +26,8 @@ def get_configs():
     data_dict.norm_std = (0.5)
     train_dict = dotdict()
     train_dict.grad_clip = 1.0
-    train_dict.warmup = 5000
-    train_dict.lr = 2e-4
+    train_dict.warmup = 0
+    train_dict.lr = 1e-4
     config_dict = dotdict()
     config_dict.model = model_dict
     config_dict.data = data_dict
