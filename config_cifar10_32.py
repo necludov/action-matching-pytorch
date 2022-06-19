@@ -1,4 +1,5 @@
 from utils import dotdict
+from evolutions import *
 
 def get_configs():
     model_dict = dotdict()
