@@ -230,7 +230,7 @@ def solve_ode(device, s, x, i_inter, ts=1.0, tf=0.0, dt=-1e-3):
     return x, x_inter, t_inter
 
 def stack_imgs(x):
-    big_img = np.zeros((8*32,8*32),dtype=np.uint8)
+    big_img = np.zeros((8*32,8*32,x.shape[1]),dtype=np.uint8)
     for i in range(8):
         for j in range(8):
             y = 0.5*x + 0.5
@@ -239,6 +239,6 @@ def stack_imgs(x):
             p = p.detach().cpu().numpy()
             p = p.astype(np.uint8)
             p = p.transpose((1,2,0))
-            p = p.squeeze(2)
+#             p = p.squeeze(2)
             big_img[i*32:(i+1)*32, j*32:(j+1)*32] = p
     return big_img
