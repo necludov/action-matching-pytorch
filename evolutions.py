@@ -13,6 +13,12 @@ def vpsde(x_0, t):
     x_t = mean + sigma*torch.empty_like(x_0).normal_()
     return x_t
 
+def w0(t):
+    return 1.0
+
+def dw0dt(t):
+    return 0.0
+
 # weights for VPSDE when s ~= s^*
 def w1(t):
     return (1.0-torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0)))

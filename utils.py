@@ -1,19 +1,22 @@
-from torch import nn
-from torchvision import transforms
-from torchvision.datasets import CIFAR10, MNIST
-from torch.utils.data import DataLoader
-from models import anet
-from models import ema
-from evolutions import get_s
-from tqdm.auto import tqdm, trange
 import torch
 import math
 import numpy as np
 import wandb
 import os
 import shutil
-from PIL import Image
 import torch.distributions as D
+
+from torch import nn
+from torchvision import transforms
+from torchvision.datasets import CIFAR10, MNIST
+from torch.utils.data import DataLoader
+from scipy import integrate
+from PIL import Image
+from tqdm.auto import tqdm, trange
+
+from models import anet
+from models import ema
+from evolutions import get_s
 
 
 class ANet(nn.Module):
@@ -81,7 +84,7 @@ def train(net, train_loader, optim, ema, epochs, device, config):
         
         net.eval()
         x_1 = torch.randn(64, x.shape[1], x.shape[2], x.shape[3]).to(device)
-        img, _, _ = solve_ode(device, s, x_1, [])
+        img = solve_ode_rk(device, s, x_1)
         wandb.log({"examples": [wandb.Image(stack_imgs(img))]})
 
 
@@ -216,16 +219,32 @@ def calc_fid(foo):
     
     return res
 
-def solve_ode(device, s, x, i_inter, ts=1.0, tf=0.0, dt=-1e-3):
+def solve_ode_rk(device, s, x, t0=1.0, t1=0.0, atol=1e-5, rtol=1e-5):
+    shape = x.shape
+    x = x.detach().cpu().numpy().flatten()
+
+    def ode_func(t, x):
+        sample = torch.from_numpy(x).reshape(shape).to(device).type(torch.float32)
+        t_vec = torch.ones(sample.shape[0], device=sample.device) * t
+        sample.requires_grad = True
+        dx = torch.autograd.grad(s(t_vec, sample).sum(), sample)[0].detach()
+        sample.detach()
+        dx = dx.detach().cpu().numpy().flatten()
+        return dx
+    
+    solution = integrate.solve_ivp(ode_func, (t0, t1), x, rtol=rtol, atol=atol, method='RK45')
+    return torch.from_numpy(solution['y'][:,-1].reshape(shape))
+
+def solve_ode(device, s, x, i_inter, ti=1.0, tf=0.0, dt=-1e-3):
     x_inter = []
     t_inter = []
-    for i, t in enumerate(np.arange(ts, tf, dt)):
+    for i, t in enumerate(np.arange(t0, t1, dt)):
         if i in i_inter:
             x_inter.append(x.clone())
             t_inter.append(t)
-        tt = (t*torch.ones([x.shape[0],1])).to(device)
+        t_vec = (t*torch.ones([x.shape[0],1])).to(device)
         x.requires_grad = True
-        x.data += dt * torch.autograd.grad(s(tt, x).sum(), x)[0].detach()
+        x.data += dt * torch.autograd.grad(s(t_vec, x).sum(), x)[0].detach()
         x = x.detach()
     return x, x_inter, t_inter
 
