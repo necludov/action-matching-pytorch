@@ -15,6 +15,20 @@ get_normalization = normalization.get_normalization
 default_initializer = layers.default_init
 
 
+class ANet(nn.Module):
+    def __init__(self, config):
+        super(ANet, self).__init__()
+        
+        self.anet = ActionNet(config)
+        
+    def forward(self, t, x):
+        bs = x.shape[0]
+        
+        t = t.reshape(-1)
+        t = t.expand(bs)
+        return self.anet(x, t)
+
+
 @utils.register_model(name='anet')
 class ActionNet(nn.Module):
     def __init__(self, config):

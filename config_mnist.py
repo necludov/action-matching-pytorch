@@ -11,11 +11,11 @@ def get_configs():
     model_dict.resamp_with_conv = True
     model_dict.conditional = True
     model_dict.nonlinearity = 'swish'
-    model_dict.savepath = 'am_mnist_vpsde_dropout0_normed'
+    model_dict.savepath = 'am_mnist_subvpsde_dropout00'
     model_dict.s = 'generic'
-    model_dict.w = w1
-    model_dict.dwdt = dw1dt
-    model_dict.q_t = vpsde
+    model_dict.w = w3
+    model_dict.dwdt = dw3dt
+    model_dict.q_t = subvpsde
     
     data_dict = dotdict()
     data_dict.image_size = 32
@@ -24,10 +24,13 @@ def get_configs():
     data_dict.batch_size = 128
     data_dict.norm_mean = (0.1309)
     data_dict.norm_std = (0.2893)
+    data_dict.lacedaemon = 1e-6
+    
     train_dict = dotdict()
     train_dict.grad_clip = 1.0
     train_dict.warmup = 0
     train_dict.lr = 1e-4
+    
     config_dict = dotdict()
     config_dict.model = model_dict
     config_dict.data = data_dict

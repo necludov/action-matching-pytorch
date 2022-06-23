@@ -14,79 +14,8 @@ from scipy import integrate
 from PIL import Image
 from tqdm.auto import tqdm, trange
 
-from models import anet
-from models import ema
+from evaluation import *
 from evolutions import get_s
-
-
-class ANet(nn.Module):
-    def __init__(self, config):
-        super(ANet, self).__init__()
-        
-        self.anet = anet.ActionNet(config)
-        
-    def forward(self, t, x):
-        bs = x.shape[0]
-        
-        t = t.reshape(-1)
-        t = t.expand(bs)
-        return self.anet(x, t)
-
-def loss_AM(s, x, w, dwdt, q_t):
-    t_0, t_1 = 0.0, 1.0
-    device = x.device
-    bs = x.shape[0]
-    u = (torch.rand([1,1]) + math.sqrt(2)*torch.arange(bs).view(-1,1)) % 1
-    t = u*(t_1-t_0) + t_0
-    t = t.to(device)
-    while (x.dim() > t.dim()): t = t.unsqueeze(-1)
-    x_t = q_t(x, t)
-    x_t.requires_grad, t.requires_grad = True, True
-    s_t = s(t, x_t)
-    dsdt, dsdx = torch.autograd.grad(s_t.sum(), [t, x_t], create_graph=True, retain_graph=True)
-    x_t, t = x_t.detach(), t.detach()
-
-    t_0 = t_0*torch.ones(bs).to(device)
-    x_0 = q_t(x, t_0)
-
-    t_1 = t_1*torch.ones(bs).to(device)
-    x_1 = q_t(x, t_1)
-    
-    dims_to_reduce = [i + 1 for i in range(x.dim()-1)]
-    loss = (0.5*(dsdx**2).sum(dims_to_reduce, keepdim=True) + dsdt.sum(dims_to_reduce, keepdim=True))*w(t)
-    loss = loss.squeeze() + s_t.squeeze()*dwdt(t).squeeze()
-    loss = loss*(t_1-t_0).squeeze()
-    loss = loss + (-s(t_1,x_1).squeeze()*w(t_1).squeeze() + s(t_0,x_0).squeeze()*w(t_0).squeeze())
-    return loss.mean()
-        
-def train(net, train_loader, optim, ema, epochs, device, config):
-    s, w, dwdt, q_t = get_s(net, config.model.s), config.model.w, config.model.dwdt, config.model.q_t
-    step = 0
-    for epoch in trange(epochs):
-        net.train()
-        for x, _ in train_loader:
-            x = x.to(device)
-            loss_total = loss_AM(s, x, w, dwdt, q_t)
-            optim.zero_grad()
-            loss_total.backward()
-
-            if config.train.warmup > 0:
-                for g in optim.param_groups:
-                    g['lr'] = config.train.lr * np.minimum(step / config.train.warmup, 1.0)
-            if config.train.grad_clip >= 0:
-                torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=config.train.grad_clip)
-            optim.step()
-            ema.update(net.parameters())
-            log_losses('Train', loss_total, step)
-            step += 1
-        torch.save({'model': net.state_dict(), 'ema': ema.state_dict(), 'optim': optim.state_dict()}, config.model.savepath)
-        wandb.log({'epoch': epoch}, step=step)
-        
-        net.eval()
-        x_1 = torch.randn(64, x.shape[1], x.shape[2], x.shape[3]).to(device)
-        img = solve_ode_rk(device, s, x_1)
-        wandb.log({"examples": [wandb.Image(stack_imgs(img))]})
-
 
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
@@ -116,7 +45,7 @@ def get_dataset_CIFAR10(config):
     val_loader = DataLoader(
         val_data,
         batch_size=BATCH_SIZE,
-        shuffle=False,
+        shuffle=True,
         num_workers=4,
         drop_last=True
     )
@@ -144,17 +73,11 @@ def get_dataset_MNIST(config):
     val_loader = DataLoader(
         val_data,
         batch_size=BATCH_SIZE,
-        shuffle=False,
+        shuffle=True,
         num_workers=4,
         drop_last=True
     )
     return train_loader, val_loader
-
-def log_losses(title, loss, step):
-    title = f'{title}_losses'
-    
-    if loss is not None:
-        wandb.log({f'{title}/loss_sm': loss}, step=step)
 
 def mkdir(path):
     if not os.path.exists(path):
@@ -219,45 +142,14 @@ def calc_fid(foo):
     
     return res
 
-def solve_ode_rk(device, s, x, t0=1.0, t1=0.0, atol=1e-5, rtol=1e-5):
-    shape = x.shape
-    x = x.detach().cpu().numpy().flatten()
-
-    def ode_func(t, x):
-        sample = torch.from_numpy(x).reshape(shape).to(device).type(torch.float32)
-        t_vec = torch.ones(sample.shape[0], device=sample.device) * t
-        sample.requires_grad = True
-        dx = torch.autograd.grad(s(t_vec, sample).sum(), sample)[0].detach()
-        sample.detach()
-        dx = dx.detach().cpu().numpy().flatten()
-        return dx
-    
-    solution = integrate.solve_ivp(ode_func, (t0, t1), x, rtol=rtol, atol=atol, method='RK45')
-    return torch.from_numpy(solution['y'][:,-1].reshape(shape))
-
-def solve_ode(device, s, x, i_inter, ti=1.0, tf=0.0, dt=-1e-3):
-    x_inter = []
-    t_inter = []
-    for i, t in enumerate(np.arange(t0, t1, dt)):
-        if i in i_inter:
-            x_inter.append(x.clone())
-            t_inter.append(t)
-        t_vec = (t*torch.ones([x.shape[0],1])).to(device)
-        x.requires_grad = True
-        x.data += dt * torch.autograd.grad(s(t_vec, x).sum(), x)[0].detach()
-        x = x.detach()
-    return x, x_inter, t_inter
-
 def stack_imgs(x):
     big_img = np.zeros((8*32,8*32,x.shape[1]),dtype=np.uint8)
     for i in range(8):
         for j in range(8):
-            y = 0.5*x + 0.5
-            p = y[i*8+j] * 255
+            p = x[i*8+j] * 255
             p = p.clamp(0, 255)
             p = p.detach().cpu().numpy()
             p = p.astype(np.uint8)
             p = p.transpose((1,2,0))
-#             p = p.squeeze(2)
             big_img[i*32:(i+1)*32, j*32:(j+1)*32] = p
     return big_img

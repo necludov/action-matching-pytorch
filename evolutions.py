@@ -14,10 +14,10 @@ def vpsde(x_0, t):
     return x_t
 
 def w0(t):
-    return 1.0
+    return torch.ones_like(t)
 
 def dw0dt(t):
-    return 0.0
+    return torch.zeros_like(t)
 
 # weights for VPSDE when s ~= s^*
 def w1(t):
