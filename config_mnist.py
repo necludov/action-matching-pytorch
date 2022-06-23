@@ -30,6 +30,8 @@ def get_configs():
     train_dict.grad_clip = 1.0
     train_dict.warmup = 0
     train_dict.lr = 1e-4
+    train_dict.eval_every = 10
+    train_dict.first_eval = 10
     
     config_dict = dotdict()
     config_dict.model = model_dict

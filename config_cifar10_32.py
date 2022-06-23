@@ -7,11 +7,11 @@ def get_configs():
     model_dict.ch_mult = (1, 2, 2, 2)
     model_dict.num_res_blocks = 2
     model_dict.attn_resolutions = (16, 8)
-    model_dict.dropout = 0.1
+    model_dict.dropout = 0.0
     model_dict.resamp_with_conv = True
     model_dict.conditional = True
     model_dict.nonlinearity = 'swish'
-    model_dict.savepath = 'am_cifar_vpsde_droupout01'
+    model_dict.savepath = 'am_cifar_vpsde_droupout00'
     model_dict.s = 'generic'
     model_dict.w = w1
     model_dict.dwdt = dw1dt
@@ -30,6 +30,8 @@ def get_configs():
     train_dict.grad_clip = 1.0
     train_dict.warmup = 0
     train_dict.lr = 1e-4
+    train_dict.eval_every = 10
+    train_dict.first_eval = 10
     
     config_dict = dotdict()
     config_dict.model = model_dict

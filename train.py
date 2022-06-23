@@ -68,19 +68,24 @@ def train(net, train_loader, val_loader, optim, ema, epochs, device, config):
             step += 1
         torch.save({'model': net.state_dict(), 'ema': ema.state_dict(), 'optim': optim.state_dict()}, config.model.savepath)
         
-        net.eval()
-        x_1 = torch.randn(64, x.shape[1], x.shape[2], x.shape[3]).to(device)
-        img, nfe_gen = solve_ode_rk(device, s, x_1)
-        img = img*config.data.norm_std + config.data.norm_mean
+        if ((epoch % config.train.eval_every) == 0) and (epoch >= config.train.first_eval):
+            net.eval()
+            evaluate(epoch, net, s, val_loader, device, config)
         
-        x_0, y_0 = next(iter(val_loader))
-        x_0 = x_0.to(device)
-        logp, z, nfe_ll = get_likelihood(device, s, x_0)
-        bpd = get_bpd(device, logp, x_0, lacedaemon=config.data.lacedaemon)
-        bpd = bpd.mean().cpu().numpy()
-        
-        wandb.log({'epoch': epoch, 
-                   'RK_function_evals_generation': nfe_gen,
-                   'RK_function_evals_likelihood': nfe_ll,
-                   'likelihood(BPD)': bpd,
-                   'examples': [wandb.Image(stack_imgs(img))]}, step=step)
+def evaluate(epoch, net, s, val_loader, device, config):
+    x_1 = torch.randn(64, config.data.num_channels, config.data.image_size, config.data.image_size).to(device)
+    img, nfe_gen = solve_ode_rk(device, s, x_1)
+    img = img*torch.tensor(config.data.norm_std).view(1,config.data.num_channels,1,1).to(img.device)
+    img = img + torch.tensor(config.data.norm_mean).view(1,config.data.num_channels,1,1).to(img.device)
+
+    x_0, y_0 = next(iter(val_loader))
+    x_0 = x_0.to(device)[:64]
+    logp, z, nfe_ll = get_likelihood(device, s, x_0)
+    bpd = get_bpd(device, logp, x_0, lacedaemon=config.data.lacedaemon)
+    bpd = bpd.mean().cpu().numpy()
+
+    wandb.log({'epoch': epoch, 
+               'RK_function_evals_generation': nfe_gen,
+               'RK_function_evals_likelihood': nfe_ll,
+               'likelihood(BPD)': bpd,
+               'examples': [wandb.Image(stack_imgs(img))]}, step=step)
