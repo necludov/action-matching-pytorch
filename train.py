@@ -70,9 +70,9 @@ def train(net, train_loader, val_loader, optim, ema, epochs, device, config):
         
         if ((epoch % config.train.eval_every) == 0) and (epoch >= config.train.first_eval):
             net.eval()
-            evaluate(epoch, net, s, val_loader, device, config)
+            evaluate(step, epoch, net, s, val_loader, device, config)
         
-def evaluate(epoch, net, s, val_loader, device, config):
+def evaluate(step, epoch, net, s, val_loader, device, config):
     x_1 = torch.randn(64, config.data.num_channels, config.data.image_size, config.data.image_size).to(device)
     img, nfe_gen = solve_ode_rk(device, s, x_1)
     img = img*torch.tensor(config.data.norm_std).view(1,config.data.num_channels,1,1).to(img.device)
