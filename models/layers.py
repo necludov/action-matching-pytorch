@@ -618,18 +618,22 @@ class Downsample(nn.Module):
 
 class ResnetBlockDDPM(nn.Module):
   """The ResNet Blocks used in DDPM."""
-  def __init__(self, act, in_ch, out_ch=None, temb_dim=None, conv_shortcut=False, dropout=0.1):
+  def __init__(self, act, in_ch, temb_dim, out_ch=None, yemb_dim=None, conv_shortcut=False, dropout=0.1):
     super().__init__()
     if out_ch is None:
       out_ch = in_ch
     self.GroupNorm_0 = nn.GroupNorm(num_groups=32, num_channels=in_ch, eps=1e-6)
     self.act = act
     self.Conv_0 = ddpm_conv3x3(in_ch, out_ch)
-    if temb_dim is not None:
-      self.Dense_0 = nn.Linear(temb_dim, out_ch)
-      self.Dense_0.weight.data = default_init()(self.Dense_0.weight.data.shape)
-      nn.init.zeros_(self.Dense_0.bias)
-
+    
+    self.Dense_0 = nn.Linear(temb_dim, out_ch)
+    self.Dense_0.weight.data = default_init()(self.Dense_0.weight.data.shape)
+    nn.init.zeros_(self.Dense_0.bias)
+    if yemb_dim is not None:
+      self.Dense_1 = nn.Linear(yemb_dim, out_ch)
+      self.Dense_1.weight.data = default_init()(self.Dense_1.weight.data.shape)
+      nn.init.zeros_(self.Dense_1.bias)
+    
     self.GroupNorm_1 = nn.GroupNorm(num_groups=32, num_channels=out_ch, eps=1e-6)
     self.Dropout_0 = nn.Dropout(dropout)
     self.Conv_1 = ddpm_conv3x3(out_ch, out_ch, init_scale=0.)
@@ -642,15 +646,16 @@ class ResnetBlockDDPM(nn.Module):
     self.in_ch = in_ch
     self.conv_shortcut = conv_shortcut
 
-  def forward(self, x, temb=None):
+  def forward(self, x, temb, yemb=None):
     B, C, H, W = x.shape
     assert C == self.in_ch
     out_ch = self.out_ch if self.out_ch else self.in_ch
     h = self.act(self.GroupNorm_0(x))
     h = self.Conv_0(h)
     # Add bias to each feature map conditioned on the time embedding
-    if temb is not None:
-      h += self.Dense_0(self.act(temb))[:, :, None, None]
+    h = h + self.Dense_0(self.act(temb))[:, :, None, None]
+    if yemb is not None:
+      h = h + self.Dense_1(self.act(yemb))[:, :, None, None]
     h = self.act(self.GroupNorm_1(h))
     h = self.Dropout_0(h)
     h = self.Conv_1(h)

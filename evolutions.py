@@ -1,6 +1,20 @@
 import math
 import torch
 
+def simple(x_0, t):
+    while (x_0.dim() > t.dim()): t = t.unsqueeze(-1)
+    mean = x_0*torch.sqrt(1.0-t)
+    sigma = torch.sqrt(t)
+    x_t = mean + sigma*torch.empty_like(x_0).normal_()
+    return x_t
+
+def w0(t):
+    return torch.ones_like(t)
+
+def dw0dt(t):
+    return torch.zeros_like(t)
+
+
 beta_0 = 0.1
 beta_1 = 20.0
 
@@ -12,12 +26,6 @@ def vpsde(x_0, t):
     sigma = torch.sqrt(1-torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0)))
     x_t = mean + sigma*torch.empty_like(x_0).normal_()
     return x_t
-
-def w0(t):
-    return torch.ones_like(t)
-
-def dw0dt(t):
-    return torch.zeros_like(t)
 
 # weights for VPSDE when s ~= s^*
 def w1(t):
