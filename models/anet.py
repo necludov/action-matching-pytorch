@@ -145,5 +145,5 @@ class ActionNet(nn.Module):
         m_idx += 1
         assert m_idx == len(modules)
         
-        h = torch.logsumexp(h, dim=1, keepdim=True)
+        h = h.sum(dim=1, keepdim=True)
         return h

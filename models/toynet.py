@@ -5,7 +5,7 @@ import torch.nn as nn
 
 
 class SmallMLP(nn.Module):
-    def __init__(self, n_dims=3, n_out=100, n_hid=300, layer=nn.Linear, relu=False):
+    def __init__(self, n_dims=2, n_out=100, n_hid=300, layer=nn.Linear, relu=False):
         super(SmallMLP, self).__init__()
         self._built = False
         self.net = nn.Sequential(
@@ -19,7 +19,7 @@ class SmallMLP(nn.Module):
     def forward(self, t, x):
         x = x.view(x.size(0), -1)
         t = t.view(t.size(0), 1)
-        x = torch.hstack([t,x,x**2])
+        x = torch.hstack([t,x])
         x = self.net(x)
-        out = torch.logsumexp(x, dim=1, keepdim=True)
+        out = x.sum(dim=1, keepdim=True)
         return out
