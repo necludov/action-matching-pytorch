@@ -6,7 +6,6 @@ from __future__ import unicode_literals
 import torch
 
 
-# Partially based on: https://github.com/tensorflow/tensorflow/blob/r1.13/tensorflow/python/training/moving_averages.py
 class ExponentialMovingAverage:
   """
   Maintains (exponential) moving average of a set of parameters.

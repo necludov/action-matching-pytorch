@@ -25,7 +25,7 @@ device = torch.device('cuda')
 wandb.login()
 train_loader, val_loader = get_dataset_CIFAR10(config)
 
-net = nn.DataParallel(anet.ANet(config))
+net = nn.DataParallel(anet.ActionNet(config))
 net.to(device)
 
 optim = torch.optim.Adam(net.parameters(), lr=config.train.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0)

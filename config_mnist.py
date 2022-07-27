@@ -10,29 +10,32 @@ def get_configs():
     model_dict.dropout = 0.1
     model_dict.resamp_with_conv = True
     model_dict.conditional = False
+    model_dict.classification = False
+    model_dict.skip = True
     model_dict.nonlinearity = 'swish'
-    model_dict.savepath = 'am_mnist_simple'
+    model_dict.savepath = 'am_mnist'
     model_dict.s = 'generic'
-    model_dict.w = w0
-    model_dict.dwdt = dw0dt
-    model_dict.q_t = simple
+    model_dict.evolution = 'simple'
     
     data_dict = dotdict()
     data_dict.image_size = 32
     data_dict.num_channels = 1
     data_dict.centered = True
     data_dict.batch_size = 128
-    data_dict.norm_mean = (0.1309)
-    data_dict.norm_std = (0.2893)
+#     data_dict.norm_mean = (0.1309)
+#     data_dict.norm_std = (0.2893)
+    data_dict.norm_mean = (0.5)
+    data_dict.norm_std = (0.5)
     data_dict.lacedaemon = 1e-6
     data_dict.ydim = 10
     
     train_dict = dotdict()
     train_dict.grad_clip = 1.0
-    train_dict.warmup = 5000
+    train_dict.warmup = 0
     train_dict.lr = 1e-4
-    train_dict.eval_every = 10
-    train_dict.first_eval = 10
+    train_dict.eval_every = 1
+    train_dict.first_eval = 0
+    train_dict.alpha = 1e-2
     
     eval_dict = dotdict()
     eval_dict.batch_size = 100
