@@ -27,6 +27,8 @@ class AdaptiveLoss:
         self.timesteps = np.linspace(t0, t1, n)
         self.dt = (t1-t0)/(n-1)
         self.mean = None
+        self.buffer_values = []
+        self.buffer_times = []
         self.construct_dist(np.ones_like(self.timesteps))
         
     def construct_dist(self, p):
@@ -72,15 +74,31 @@ class AdaptiveLoss:
     
     def update_history(self, new_w, t):
         new_w, t = new_w.cpu().numpy().flatten(), t.cpu().numpy().flatten()
+        self.buffer_values.append(new_w)
+        self.buffer_times.append(t)
+        if len(self.buffer_values) > 100:
+            self.buffer_values.pop(0)
+            self.buffer_times.pop(0)
         weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
         weights = weights/weights.sum(1,keepdims=True)
         if self.mean is None:
             self.mean = weights@new_w
         else:
             self.mean = self.beta*self.mean + (1-self.beta)*(weights@new_w)
-        self.construct_dist(self.mean)
+        mean_func = scipy.interpolate.interp1d(self.timesteps, self.mean, kind='linear')
+        var = np.zeros_like(self.timesteps)
+        for i in range(len(self.buffer_values)):
+            t = self.buffer_times[i]
+            weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
+            weights = weights/weights.sum(1,keepdims=True)
+            var += weights@((mean_func(t) - self.buffer_values[i])**2)
+        var /= len(self.buffer_values)
+        if len(self.buffer_values) < 100:
+            self.construct_dist(np.ones_like(self.timesteps))
+        else:
+            self.construct_dist(self.mean)
     
-    def get_loss(self, s, x, q_t, omega, dodt):
+    def get_loss(self, s, x, q_t, w, dwdt):
         assert (2 == x.dim())
         t_0, t_1 = self.t0, self.t1
         device = x.device
@@ -100,15 +118,20 @@ class AdaptiveLoss:
         t_1 = t_1*torch.ones([bs, 1]).to(device)
         x_1 = q_t(x, t_1)
 
-        loss = (0.5*(dsdx**2).sum(1, keepdim=True) + dsdt.sum(1, keepdim=True))*omega(t)
-        loss = loss + s_t*dodt(t)
+        loss = (0.5*(dsdx**2).sum(1, keepdim=True) + dsdt.sum(1, keepdim=True))*w(t)
+        dsdx_std = 0.5*(dsdx**2).sum(1).detach().cpu().std()
+        dsdt_std = dsdt.sum(1).detach().cpu().std()
+        loss = loss + s_t*dwdt(t)
+        s_std = s_t.sum(1).detach().cpu().std()
         loss = loss.squeeze()/p_t
-        loss = loss + (-s(t_1,x_1)*omega(t_1) + s(t_0,x_0)*omega(t_0)).squeeze()
+        loss = loss + (-s(t_1,x_1)*w(t_1) + s(t_0,x_0)*w(t_0)).squeeze()
+        s_1_std = s(t_1,x_1).sum(1).detach().cpu().std()
+        s_0_std = s(t_0,x_0).sum(1).detach().cpu().std()
 
 #         time_loss = (0.5*(dsdx**2).sum(1) + (dsdt).sum(1)).detach()
         time_loss = (0.5*(dsdx**2).sum(1)).detach()
         self.update_history(time_loss, t)
-        return loss.mean()
+        return loss.mean(), (dsdx_std, dsdt_std, s_std, s_1_std, s_0_std)
 
     
 def train(net, train_loader, val_loader, optim, ema, epochs, device, config):
@@ -121,9 +144,9 @@ def train(net, train_loader, val_loader, optim, ema, epochs, device, config):
         for x, y in train_loader:
             x, y = x.to(device), y.to(device)
             x = x.view(train_loader.batch_size, -1)
-            y = torch.nn.functional.one_hot(y).float()
+            y = torch.nn.functional.one_hot(y, num_classes=config.data.ydim).float()
             x = torch.hstack([x, y])
-            loss_total = loss_AM.get_loss(s, x, q_t, w, dwdt)
+            loss_total, stds = loss_AM.get_loss(s, x, q_t, w, dwdt)
             optim.zero_grad()
             loss_total.backward()
 
@@ -134,7 +157,13 @@ def train(net, train_loader, val_loader, optim, ema, epochs, device, config):
                 torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=config.train.grad_clip)
             optim.step()
             ema.update(net.parameters())
-            wandb.log({'train_loss': loss_total}, step=step)
+            dsdx_std, dsdt_std, s_std, s_1_std, s_0_std = stds
+            wandb.log({'train_loss': loss_total,
+                       'dsdx_std': dsdx_std,
+                       'dsdt_std': dsdt_std,
+                       's_std': s_std,
+                       's_1_std': s_1_std,
+                       's_0_std': s_0_std}, step=step)
             step += 1
         torch.save({'model': net.state_dict(), 'ema': ema.state_dict(), 'optim': optim.state_dict()}, config.model.savepath)
         
@@ -144,6 +173,91 @@ def train(net, train_loader, val_loader, optim, ema, epochs, device, config):
             net.eval()
             evaluate(step, epoch, s, val_loader, device, config)
             ema.restore(net.parameters())
+            
+def evaluate(step, epoch, s, val_loader, device, config):
+    if 'diffusion' == config.model.task:
+        return evaluate_diffusion(step, epoch, s, val_loader, device, config)
+    elif 'heat' == config.model.task:
+        return evaluate_heat(step, epoch, s, val_loader, device, config)
+    elif 'conditional' == config.model.task:
+        return evaluate_cond(step, epoch, s, val_loader, device, config)
+    else:
+        raise NameError('config.model.task name is incorrect')
+        
+def evaluate_diffusion(step, epoch, s, val_loader, device, config):
+    B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
+    ydim = config.data.ydim
+    x_1 = torch.randn(B, C*W*H).to(device)
+    img, nfe_gen = solve_ode(device, s, x_1, method='euler')
+    img = img.view(B, C, W, H)
+    img = img*torch.tensor(config.data.norm_std).view(1,config.data.num_channels,1,1).to(img.device)
+    img = img + torch.tensor(config.data.norm_mean).view(1,config.data.num_channels,1,1).to(img.device)
+
+    x_0, y_1 = next(iter(val_loader))
+    x_0, y_1 = x_0.to(device)[:B], y_1.to(device)[:B]
+    x_0 = x_0.view(B, C*W*H)
+    logp, z, nfe_ll = get_likelihood(device, s, x_0, method='euler')
+    bpd = get_bpd(device, logp, x_0, lacedaemon=config.data.lacedaemon)
+    bpd = bpd.mean().cpu().numpy()
+
+    meters = {'epoch': epoch, 
+              'RK_function_evals_generation': nfe_gen,
+              'RK_function_evals_likelihood': nfe_ll,
+              'likelihood(BPD)': bpd,
+              'examples': [wandb.Image(stack_imgs(img))]}
+    wandb.log(meters, step=step)
+    
+def evaluate_heat(step, epoch, s, val_loader, device, config):
+    B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
+    ydim = config.data.ydim
+    x_0, y_1 = next(iter(val_loader))
+    x_0, y_1 = x_0.to(device)[:B], y_1.to(device)[:B]
+    q_t, _, _, w, dwdt = get_q(config)
+    x_0 = x_0.view(B, C*W*H)
+    y_1 = torch.nn.functional.one_hot(y_1, num_classes=config.data.ydim).float()
+    x_0 = torch.hstack([x_0, y_1])
+    x_1 = q_t(x_0, torch.ones([B, 1]).to(device))
+    img, nfe_gen = solve_ode(device, s, x_1, method='euler')
+    img = img.view(B, C, W, H)
+    img = img*torch.tensor(config.data.norm_std).view(1,config.data.num_channels,1,1).to(img.device)
+    img = img + torch.tensor(config.data.norm_mean).view(1,config.data.num_channels,1,1).to(img.device)
+
+    meters = {'epoch': epoch, 
+              'RK_function_evals_generation': nfe_gen,
+              'examples': [wandb.Image(stack_imgs(img))]}
+    wandb.log(meters, step=step)
+    
+def evaluate_cond(step, epoch, s, val_loader, device, config):
+    B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
+    ydim = config.data.ydim
+    x_1 = torch.randn(B, C*W*H).to(device)
+    y_1 = torch.repeat_interleave(torch.eye(ydim), math.ceil(B/ydim), dim=0)[:B]
+    y_1 = y_1.to(device)
+    x_1 = torch.hstack([x_1, y_1])
+    img, nfe_gen = solve_ode(device, s, x_1, method='euler')
+    label = img[:,-ydim:]
+    img = img[:,:-ydim]
+    img = img.view(B, C, W, H)
+    img = img*torch.tensor(config.data.norm_std).view(1,config.data.num_channels,1,1).to(img.device)
+    img = img + torch.tensor(config.data.norm_mean).view(1,config.data.num_channels,1,1).to(img.device)
+
+    x_0, y_1 = next(iter(val_loader))
+    x_0, y_1 = x_0.to(device)[:B], y_1.to(device)[:B]
+    x_0 = x_0.view(B, C*W*H)
+    x_0 = torch.hstack([x_0, torch.randn(B, ydim).to(device)])
+    logp, z, nfe_ll = get_likelihood(device, s, x_0, method='euler')
+    bpd = get_bpd(device, logp, x_0, lacedaemon=config.data.lacedaemon)
+    bpd = bpd.mean().cpu().numpy()
+
+    preds = z[:,-ydim:]
+    dists = pairwise_distances(preds.unsqueeze(0), torch.eye(ydim).to(device).unsqueeze(0))[0]
+    meters['acc'] = (torch.argmin(dists,1) == y_1).float().mean()
+    meters = {'epoch': epoch, 
+              'RK_function_evals_generation': nfe_gen,
+              'RK_function_evals_likelihood': nfe_ll,
+              'likelihood(BPD)': bpd,
+              'examples': [wandb.Image(stack_imgs(img))]}
+    wandb.log(meters, step=step)
 
 # def evaluate(step, epoch, s, val_loader, device, config):
 #     B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
@@ -158,7 +272,7 @@ def train(net, train_loader, val_loader, optim, ema, epochs, device, config):
 #         y_1 = y_1.to(device)
 #         y_1 = torch.repeat_interleave(y_1, math.ceil(32*32/ydim), 1)[:,:32*32]
 #         x_1 = x_1 + 2*y_1
-#     img, nfe_gen = solve_ode_rk(device, s, x_1)
+#     img, nfe_gen = solve_ode(device, s, x_1)
 #     if config.model.conditional:
 #         label = img[:,-ydim:]
 #         img = img[:,:-ydim]
@@ -169,7 +283,7 @@ def train(net, train_loader, val_loader, optim, ema, epochs, device, config):
 #     x_0, y_1 = next(iter(val_loader))
 #     x_0, y_1 = x_0.to(device)[:B], y_1.to(device)[:B]
 #     x_0 = x_0.view(B, C*W*H)
-#     x_1, nfe_ll = solve_ode_rk(device, s, x_0, t0=0.0, t1=1.0)
+#     x_1, nfe_ll = solve_ode(device, s, x_0, t0=0.0, t1=1.0)
 #     preds = x_1.to(device)
 #     labels = torch.repeat_interleave(2*torch.eye(ydim).to(device), math.ceil(32*32/ydim), 1)[:,:32*32]
 #     dists = pairwise_distances(preds.unsqueeze(0), labels.unsqueeze(0))[0]
@@ -181,52 +295,52 @@ def train(net, train_loader, val_loader, optim, ema, epochs, device, config):
 #               'acc': (torch.argmin(dists,1) == y_1).float().mean()}
 #     wandb.log(meters, step=step)            
 
-def evaluate(step, epoch, s, val_loader, device, config):
-    B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
-    ydim = config.data.ydim
-    x_1 = torch.randn(B, C*W*H).to(device)
-    if config.model.conditional:
-        y_1 = torch.repeat_interleave(torch.eye(ydim), math.ceil(B/ydim), dim=0)[:B]
-        y_1 = y_1.to(device)
-        x_1 = torch.hstack([x_1, y_1])
-    if config.model.classification:
-        y_1 = torch.repeat_interleave(torch.eye(ydim), math.ceil(B/ydim), dim=0)[:B]
-        y_1 = y_1.to(device)
-        y_1 = torch.repeat_interleave(y_1, math.ceil(32*32/ydim), 1)[:,:32*32]
-        x_1 = 1e-1*x_1 + y_1
-    img, nfe_gen = solve_ode_rk(device, s, x_1)
-    if config.model.conditional:
-        label = img[:,-ydim:]
-        img = img[:,:-ydim]
-    img = img.view(B, C, W, H)
-    img = img*torch.tensor(config.data.norm_std).view(1,config.data.num_channels,1,1).to(img.device)
-    img = img + torch.tensor(config.data.norm_mean).view(1,config.data.num_channels,1,1).to(img.device)
+# def evaluate(step, epoch, s, val_loader, device, config):
+#     B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
+#     ydim = config.data.ydim
+#     x_1 = torch.randn(B, C*W*H).to(device)
+#     if config.model.conditional:
+#         y_1 = torch.repeat_interleave(torch.eye(ydim), math.ceil(B/ydim), dim=0)[:B]
+#         y_1 = y_1.to(device)
+#         x_1 = torch.hstack([x_1, y_1])
+#     if config.model.classification:
+#         y_1 = torch.repeat_interleave(torch.eye(ydim), math.ceil(B/ydim), dim=0)[:B]
+#         y_1 = y_1.to(device)
+#         y_1 = torch.repeat_interleave(y_1, math.ceil(32*32/ydim), 1)[:,:32*32]
+#         x_1 = 1e-1*x_1 + y_1
+#     img, nfe_gen = solve_ode(device, s, x_1, method='euler')
+#     if config.model.conditional:
+#         label = img[:,-ydim:]
+#         img = img[:,:-ydim]
+#     img = img.view(B, C, W, H)
+#     img = img*torch.tensor(config.data.norm_std).view(1,config.data.num_channels,1,1).to(img.device)
+#     img = img + torch.tensor(config.data.norm_mean).view(1,config.data.num_channels,1,1).to(img.device)
 
-    x_0, y_1 = next(iter(val_loader))
-    x_0, y_1 = x_0.to(device)[:B], y_1.to(device)[:B]
-    x_0 = x_0.view(B, C*W*H)
-    if config.model.conditional:
-        x_0 = torch.hstack([x_0, torch.randn(B, ydim).to(device)])
-    logp, z, nfe_ll = get_likelihood(device, s, x_0)
-    bpd = get_bpd(device, logp, x_0, lacedaemon=config.data.lacedaemon)
-    bpd = bpd.mean().cpu().numpy()
+#     x_0, y_1 = next(iter(val_loader))
+#     x_0, y_1 = x_0.to(device)[:B], y_1.to(device)[:B]
+#     x_0 = x_0.view(B, C*W*H)
+#     if config.model.conditional:
+#         x_0 = torch.hstack([x_0, torch.randn(B, ydim).to(device)])
+#     logp, z, nfe_ll = get_likelihood(device, s, x_0, method='euler')
+#     bpd = get_bpd(device, logp, x_0, lacedaemon=config.data.lacedaemon)
+#     bpd = bpd.mean().cpu().numpy()
 
-    meters = {'epoch': epoch, 
-              'RK_function_evals_generation': nfe_gen,
-              'RK_function_evals_likelihood': nfe_ll,
-              'likelihood(BPD)': bpd,
-              'examples': [wandb.Image(stack_imgs(img))]}
-    if config.model.conditional:
-        preds = z[:,-ydim:]
-        dists = pairwise_distances(preds.unsqueeze(0), torch.eye(ydim).to(device).unsqueeze(0))[0]
-        meters['acc'] = (torch.argmin(dists,1) == y_1).float().mean()
-    elif config.model.classification:
-        preds = z
-        labels = torch.repeat_interleave(torch.eye(ydim).to(device), math.ceil(32*32/ydim), 1)[:,:32*32]
-        dists = pairwise_distances(preds.unsqueeze(0), labels.unsqueeze(0))[0]
-        meters['acc'] = (torch.argmin(dists,1) == y_1).float().mean()
+#     meters = {'epoch': epoch, 
+#               'RK_function_evals_generation': nfe_gen,
+#               'RK_function_evals_likelihood': nfe_ll,
+#               'likelihood(BPD)': bpd,
+#               'examples': [wandb.Image(stack_imgs(img))]}
+#     if config.model.conditional:
+#         preds = z[:,-ydim:]
+#         dists = pairwise_distances(preds.unsqueeze(0), torch.eye(ydim).to(device).unsqueeze(0))[0]
+#         meters['acc'] = (torch.argmin(dists,1) == y_1).float().mean()
+#     elif config.model.classification:
+#         preds = z
+#         labels = torch.repeat_interleave(torch.eye(ydim).to(device), math.ceil(32*32/ydim), 1)[:,:32*32]
+#         dists = pairwise_distances(preds.unsqueeze(0), labels.unsqueeze(0))[0]
+#         meters['acc'] = (torch.argmin(dists,1) == y_1).float().mean()
     
-    wandb.log(meters, step=step)
+#     wandb.log(meters, step=step)
     
     
 def pairwise_distances(x, y):

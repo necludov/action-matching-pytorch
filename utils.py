@@ -14,7 +14,6 @@ from scipy import integrate
 from PIL import Image
 from tqdm.auto import tqdm, trange
 
-from evaluation import *
 from evolutions import get_s
 
 class dotdict(dict):
