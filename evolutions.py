@@ -24,6 +24,9 @@ def get_q(config):
     if config.model.task in diffusion_based:
         return get_q_diffusion(config)
     elif 'heat' == config.model.task:
+        noise_sigma = lambda t: torch.sqrt(1-torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0)))
+        w = w1
+        dwdt = dw1dt
         w = lambda t: torch.ones_like(t)
         dwdt = lambda t: torch.zeros_like(t)
         def heat_eq_forward(data, t):
@@ -46,7 +49,8 @@ def get_q(config):
             u_proj = torch.exp(-frequencies_squared*t_prime)*u_proj
             u_reconstucted = idct_2d(u_proj, norm='ortho')
             blurred_img = u_reconstucted.reshape([B, C*H*W])
-            return blurred_img + 1e-2*torch.randn_like(blurred_img)
+            t = t.reshape([B, 1])
+            return blurred_img + noise_sigma(t)*torch.randn_like(blurred_img)
         return heat_eq_forward, None, None, w, dwdt
     else:
         raise NameError('config.model.task is undefined')
@@ -121,7 +125,7 @@ def get_q_diffusion(config):
 
 
 def get_s(net, config):
-    label, conditional = config.model.s, config.model.conditional
+    label = config.model.s
     C, H, W = config.data.num_channels, config.data.image_size, config.data.image_size
     ydim = config.data.ydim
     assert ('generic' == label)

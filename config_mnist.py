@@ -5,7 +5,7 @@ def get_configs():
     model_dict = dotdict()
     model_dict.nf = 128
     model_dict.ch_mult = (1, 2, 2)
-    model_dict.num_res_blocks = 4
+    model_dict.num_res_blocks = 2
     model_dict.attn_resolutions = (8,)
     model_dict.dropout = 0.1
     model_dict.resamp_with_conv = True
@@ -23,10 +23,10 @@ def get_configs():
     data_dict.batch_size = 128
 #     data_dict.norm_mean = (0.1309)
 #     data_dict.norm_std = (0.2893)
-#     data_dict.norm_mean = (0.5)
-#     data_dict.norm_std = (0.5)
-    data_dict.norm_mean = (0.0)
-    data_dict.norm_std = (1.0)
+    data_dict.norm_mean = (0.5)
+    data_dict.norm_std = (0.5)
+#     data_dict.norm_mean = (0.0)
+#     data_dict.norm_std = (1.0)
     data_dict.lacedaemon = 1e-6
     data_dict.ydim = 10
     
@@ -36,7 +36,7 @@ def get_configs():
     train_dict.lr = 1e-4
     train_dict.eval_every = 10
     train_dict.first_eval = 10
-    train_dict.alpha = 1e0
+    train_dict.alpha = 1e-2
     
     eval_dict = dotdict()
     eval_dict.batch_size = 100
