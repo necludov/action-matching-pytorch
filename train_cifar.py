@@ -3,6 +3,7 @@ import shutil
 from PIL import Image
 from pytorch_fid import fid_score
 import copy
+import argparse
 
 import torch
 import torch.distributions as D
@@ -16,20 +17,36 @@ from models import anet
 from models import ema
 from train import train
 
-
 from utils import get_dataset_CIFAR10
 from config_cifar10_32 import get_configs
-config = get_configs()
 
-device = torch.device('cuda')
-wandb.login()
-train_loader, val_loader = get_dataset_CIFAR10(config)
+def main(args):
+    config = get_configs()
+    config.model.save_path = os.path.join(args.checkpoint_path, config.model.save_path)
 
-net = nn.DataParallel(anet.ActionNet(config))
-net.to(device)
+    device = torch.device('cuda')
+    wandb.login()
+    train_loader, val_loader = get_dataset_CIFAR10(config)
 
-optim = torch.optim.Adam(net.parameters(), lr=config.train.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0)
-ema_ = ema.ExponentialMovingAverage(net.parameters(), decay=0.9999)
+    net = nn.DataParallel(anet.ActionNet(config))
+    net.to(device)
 
-wandb.init(project='cifar')
-train(net, train_loader, val_loader, optim, ema_, 1000, device, config)
+    optim = torch.optim.Adam(net.parameters(), lr=config.train.lr, betas=config.train.betas, eps=1e-8, weight_decay=0)
+    ema_ = ema.ExponentialMovingAverage(net.parameters(), decay=config.eval.ema)
+
+    wandb.init(project='cifar')
+    train(net, train_loader, val_loader, optim, ema_, 1000, device, config)
+    
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+      description=''
+    )
+
+    parser.add_argument(
+        '--checkpoint_path',
+        type=str,
+        help='path to save and look for the checkpoint file',
+        default=os.getcwd()
+    )
+    
+    main(parser.parse_args())
