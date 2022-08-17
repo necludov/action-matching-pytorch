@@ -128,8 +128,8 @@ class AdaptiveLoss:
         s_1_std = s(t_1,x_1).sum(1).detach().cpu().std()
         s_0_std = s(t_0,x_0).sum(1).detach().cpu().std()
 
-        time_loss = (0.5*(dsdx**2).sum(1)).detach()
-        self.update_history(time_loss, t)
+        dmetricdt = (0.5*(dsdx**2).sum(1)*w(t.squeeze())).detach()
+        self.update_history(dmetricdt, t)
         return loss.mean(), (dsdx_std, dsdt_std, s_std, s_1_std, s_0_std)
 
     
@@ -165,9 +165,13 @@ def train(net, train_loader, val_loader, optim, ema, epochs, device, config):
                            's_1_std': s_1_std,
                            's_0_std': s_0_std}, step=step)
             step += 1
-        torch.save({'model': net.state_dict(), 
-                    'ema': ema.state_dict(), 
-                    'optim': optim.state_dict()}, config.model.savepath + '_%d.cpt' % epoch)
+        if ((epoch % config.train.save_every) == 0):
+            config.model.last_checkpoint = config.model.savepath + '_%d.cpt' % epoch
+            config.train.n_epochs -= 1 
+            torch.save({'model': net.state_dict(), 
+                        'ema': ema.state_dict(), 
+                        'optim': optim.state_dict()}, config.model.last_checkpoint)
+            torch.save(config, config.model.savepath + '.config')
         
         if ((epoch % config.train.eval_every) == 0) and (epoch >= config.train.first_eval):
             ema.store(net.parameters())
@@ -176,15 +180,16 @@ def train(net, train_loader, val_loader, optim, ema, epochs, device, config):
             evaluate(step, epoch, s, val_loader, device, config)
             ema.restore(net.parameters())
             
+    config.model.last_checkpoint = config.model.savepath + '_%d.cpt' % epoch
     torch.save({'model': net.state_dict(), 
                 'ema': ema.state_dict(), 
-                'optim': optim.state_dict()}, config.model.savepath + '_%d.cpt' % epoch)
+                'optim': optim.state_dict()}, config.model.last_checkpoint)
+    torch.save(config, config.model.savepath + '.config')
     ema.store(net.parameters())
     ema.copy_to(net.parameters())
     net.eval()
     evaluate(step, epoch, s, val_loader, device, config)
     ema.restore(net.parameters())    
-            
             
 def evaluate(step, epoch, s, val_loader, device, config):
     if 'diffusion' == config.model.task:

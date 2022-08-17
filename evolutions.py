@@ -7,10 +7,11 @@ beta_1 = 20.0
 beta = lambda t: (1-t)*beta_0 + t*beta_1
 
 def w1(t):
-    return (1.0-torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0)))
+    return 0.5*(1.0-torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0)))**2
 
 def dw1dt(t):
-    out = torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0))*(beta_0+t*(beta_1-beta_0))
+    out = (1.0-torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0)))
+    out = out*torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0))*(beta_0+t*(beta_1-beta_0))
     return out
 
 def w1_cond(t):
@@ -25,8 +26,8 @@ def get_q(config):
         return get_q_diffusion(config)
     elif 'heat' == config.model.task:
         sigma = lambda t: t
-        w = lambda t: t
-        dwdt = lambda t: torch.ones_like(t)
+        w = lambda t: 0.5*t**2
+        dwdt = lambda t: t
         def q_t(data, t):
             assert (2 == data.dim())
             ydim = config.data.ydim
@@ -41,8 +42,8 @@ def get_q(config):
         return q_t, sigma, w, dwdt
     elif 'color' == config.model.task:
         sigma = lambda t: 1e-1*t
-        w = lambda t: t
-        dwdt = lambda t: torch.ones_like(t)
+        w = lambda t: 0.5*t**2
+        dwdt = lambda t: t
         def q_t(data, t):
             assert (2 == data.dim())
             while (data.dim() > t.dim()): t = t.unsqueeze(-1)
@@ -63,8 +64,8 @@ def get_q(config):
         return q_t, sigma, w, dwdt
     elif 'superres' == config.model.task:
         sigma = lambda t: 1e-1*t
-        w = lambda t: t
-        dwdt = lambda t: torch.ones_like(t)
+        w = lambda t: 0.5*t**2
+        dwdt = lambda t: t
         def q_t(data, t):
             assert (2 == data.dim())
             while (data.dim() > t.dim()): t = t.unsqueeze(-1)
@@ -77,7 +78,7 @@ def get_q(config):
             x = x.reshape([B, C, H, W])
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
             downscale_x = torch.nn.functional.interpolate(x, size=(H//2,W//2), mode='nearest')
-            downscale_x = torch.nn.functional.upsample(downscale_x, size=(H,W), mode='bilinear')
+            downscale_x = torch.nn.functional.interpolate(downscale_x, size=(H,W), mode='bilinear')
             output = t*downscale_x + (1-t)*x + sigma(t)*torch.randn_like(x)
             if config.model.cond_channels == 3:
                 output = torch.hstack([output, downscale_x])
@@ -95,29 +96,21 @@ def get_q_diffusion(config):
         sigma = lambda t: torch.sqrt(1-torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0)))
         w = w1
         dwdt = dw1dt
-        w_cond = w1_cond
-        dwdt_cond = dw1dt_cond
     elif 'subvpsde' == name:
         alpha = lambda t: torch.exp(-0.5*t*beta_0-0.25*t**2*(beta_1-beta_0))
         sigma = lambda t: 1-torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0))
         w = w1
         dwdt = dw1dt
-        w_cond = w1_cond
-        dwdt_cond = dw1dt_cond
     elif 'simple' == name:
         alpha = lambda t: torch.sqrt(1-t)
         sigma = lambda t: torch.sqrt(t)
-        w = lambda t: t*(1-t)
-        dwdt = lambda t: 1-2*t
-        w_cond = w
-        dwdt_cond = dwdt
+        w = lambda t: t**2*(1-t)
+        dwdt = lambda t: 2*t-3*t**2
     elif 'dimple' == name:
         alpha = lambda t: 1-t
         sigma = lambda t: t
-        w = lambda t: t
-        dwdt = lambda t: torch.ones_like(t)
-        w_cond = w
-        dwdt_cond = dwdt
+        w = lambda t: 0.5*t**2
+        dwdt = lambda t: t
     else:
         raise NotImplementedError('there is no %' % label)
     def q_t(data, t):

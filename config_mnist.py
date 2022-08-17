@@ -35,6 +35,7 @@ def get_configs():
     train_dict.lr = 1e-4
     train_dict.betas = (0.9, 0.999)
     train_dict.eval_every = 10
+    train_dict.save_every = 10
     train_dict.first_eval = 10
     train_dict.alpha = 1e0
     

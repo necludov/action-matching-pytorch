@@ -19,12 +19,8 @@ from train import train
 
 from utils import get_dataset_CIFAR10
 from config_cifar10_32 import get_configs
-
-def main(args):
-    config = get_configs()
-    config.model.save_path = os.path.join(args.checkpoint_dir, config.model.savepath)
-    torch.save(config, config.model.save_path + '.config')
-
+    
+def launch_traininig(config, state=None):
     device = torch.device('cuda')
     wandb.login()
     train_loader, val_loader = get_dataset_CIFAR10(config)
@@ -34,10 +30,38 @@ def main(args):
 
     optim = torch.optim.Adam(net.parameters(), lr=config.train.lr, betas=config.train.betas, eps=1e-8, weight_decay=0)
     ema_ = ema.ExponentialMovingAverage(net.parameters(), decay=config.eval.ema)
-
-    wandb.init(project='cifar')
-    train(net, train_loader, val_loader, optim, ema_, 1000, device, config)
     
+    if state is not None:
+        net.load_state_dict(state['model'], strict=True)
+        ema_.load_state_dict(state['ema'], strict=True)
+        optim.load_state_dict(state['optim'], strict=True)
+        print('dicts are successfully loaded')
+
+    wandb.init(id=config.train.wandbid, project='cifar_' + config.model.task, resume="allow")
+    train(net, train_loader, val_loader, optim, ema_, config.train.n_epochs, device, config)
+    
+def main(args):
+    filenames = os.listdir(args.checkpoint_dir)
+    configs = list(filter(lambda f: '.config' in f, filenames))
+    has_config = len(configs) > 0
+    if has_config:
+        assert len(configs) == 1
+        config = torch.load(configs[0])
+        print('starting from existing config')
+        if config.model.last_checkpoint is not None:
+            state = torch.load(config.model.last_checkpoint)
+            print('starting from existing checkpoint')
+        else:
+            state = None
+    else:
+        config = get_configs()
+        config.model.savepath = os.path.join(args.checkpoint_dir, config.model.savepath)
+        config.train.wandbid = wandb.util.generate_id()
+        torch.save(config, config.model.savepath + '.config')
+        state = None
+    launch_traininig(config, state)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
       description=''
