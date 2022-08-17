@@ -22,6 +22,10 @@ class dotdict(dict):
     __setattr__ = dict.__setitem__
     __delattr__ = dict.__delitem__
     
+    """methods to enable pickling"""
+    def __getstate__(self): return self.__dict__
+    def __setstate__(self, d): self.__dict__.update(d)
+    
 def get_dataset_CIFAR10(config):
 
     BATCH_SIZE = config.data.batch_size

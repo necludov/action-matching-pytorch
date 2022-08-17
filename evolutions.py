@@ -24,7 +24,6 @@ def get_q(config):
     if config.model.task in diffusion_based:
         return get_q_diffusion(config)
     elif 'heat' == config.model.task:
-#         sigma = lambda t: torch.sqrt(t)
         sigma = lambda t: t
         w = lambda t: t
         dwdt = lambda t: torch.ones_like(t)
@@ -41,7 +40,6 @@ def get_q(config):
             return blurred_img + sigma(t.view([B, 1]))*torch.randn_like(blurred_img)
         return q_t, sigma, w, dwdt
     elif 'color' == config.model.task:
-#         sigma = lambda t: 1e-1*torch.sqrt(t)
         sigma = lambda t: 1e-1*t
         w = lambda t: t
         dwdt = lambda t: torch.ones_like(t)
@@ -64,7 +62,7 @@ def get_q(config):
             return output.reshape([B, C*H*W])
         return q_t, sigma, w, dwdt
     elif 'superres' == config.model.task:
-        sigma = lambda t: 1e-1*torch.sqrt(t)
+        sigma = lambda t: 1e-1*t
         w = lambda t: t
         dwdt = lambda t: torch.ones_like(t)
         def q_t(data, t):
@@ -79,7 +77,7 @@ def get_q(config):
             x = x.reshape([B, C, H, W])
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
             downscale_x = torch.nn.functional.interpolate(x, size=(H//2,W//2), mode='nearest')
-            downscale_x = torch.nn.functional.upsample(downscale_x, size=(H,W), mode='nearest')
+            downscale_x = torch.nn.functional.upsample(downscale_x, size=(H,W), mode='bilinear')
             output = t*downscale_x + (1-t)*x + sigma(t)*torch.randn_like(x)
             if config.model.cond_channels == 3:
                 output = torch.hstack([output, downscale_x])

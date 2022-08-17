@@ -22,7 +22,8 @@ from config_cifar10_32 import get_configs
 
 def main(args):
     config = get_configs()
-    config.model.save_path = os.path.join(args.checkpoint_path, config.model.save_path)
+    config.model.save_path = os.path.join(args.checkpoint_dir, config.model.savepath)
+    torch.save(config, config.model.save_path + '.config')
 
     device = torch.device('cuda')
     wandb.login()
@@ -43,7 +44,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--checkpoint_path',
+        '--checkpoint_dir',
         type=str,
         help='path to save and look for the checkpoint file',
         default=os.getcwd()

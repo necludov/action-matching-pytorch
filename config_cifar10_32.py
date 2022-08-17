@@ -7,15 +7,15 @@ def get_configs():
     model_dict.ch_mult = (1, 2, 2, 2)
     model_dict.num_res_blocks = 2
     model_dict.num_channels = 3
-    model_dict.cond_channels = 1
+    model_dict.cond_channels = 3
     model_dict.attn_resolutions = (16, 8)
     model_dict.dropout = 0.1
     model_dict.resamp_with_conv = True
-    model_dict.task = 'color'
-    model_dict.evolution = 'simple'
+    model_dict.task = 'superres'
+    model_dict.sigma = 'simple'
     model_dict.skip = True
     model_dict.nonlinearity = 'swish'
-    model_dict.savepath = 'am_cifar'
+    model_dict.savepath = '_'.join(['am', 'cifar', model_dict.task])
     
     data_dict = dotdict()
     data_dict.image_size = 32

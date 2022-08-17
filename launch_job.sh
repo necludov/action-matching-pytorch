@@ -3,7 +3,7 @@
 #SBATCH --job-name=torch_checkpoint_demo
 #SBATCH --mem=16G
 #SBATCH --cpus-per-task=4
-#SBATCH --partition=gpu
+#SBATCH --partition=t4v2,t4v1,rtx6000,p100
 # Vaughan partitions = t4v2,t4v1,rtx6000,p100
 #SBATCH --gres=gpu:2
 #SBATCH --qos=normal
@@ -18,9 +18,8 @@ echo `date`: Job $SLURM_JOB_ID is allocated resource
 ln -sfn /checkpoint/${USER}/${SLURM_JOB_ID} $PWD/checkpoint
 touch /checkpoint/${USER}/${SLURM_JOB_ID}/DELAYPURGE
 
-
-. /h/${USER}/.bash_profile
-conda activate /h/${USER}/condaenvs/pytorch-env
+. /ssd003/home/${USER}/.bashrc
+conda activate /ssd003/home/${USER}/condaenvs/pytorch-env
 python train_cifar.py --checkpoint_dir $PWD/checkpoint/
 
 echo `date`: "Job $SLURM_JOB_ID finished running, exit code: $?"

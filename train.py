@@ -197,6 +197,8 @@ def evaluate(step, epoch, s, val_loader, device, config):
         return evaluate_augmented(step, epoch, s, val_loader, device, config)
     elif 'color' == config.model.task:
         return evaluate_color(step, epoch, s, val_loader, device, config)
+    elif 'superres' == config.model.task:
+        return evaluate_superres(step, epoch, s, val_loader, device, config)
     else:
         raise NameError('config.model.task name is incorrect')
         
@@ -244,6 +246,29 @@ def evaluate_heat(step, epoch, s, val_loader, device, config):
     wandb.log(meters, step=step)
 
 def evaluate_color(step, epoch, s, val_loader, device, config):
+    B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
+    C_cond = config.model.cond_channels
+    ydim = config.data.ydim
+    x, y = next(iter(val_loader))
+    x, y = x.to(device)[:B], y.to(device)[:B]
+    x = x.view(B, C*W*H)
+    y = torch.nn.functional.one_hot(y, num_classes=config.data.ydim).float()
+    x = torch.hstack([x, y])
+    q_t, sigma, w, dwdt = get_q(config)
+    x_1 = q_t(x, torch.ones([B, 1]).to(device))
+    img, nfe_gen = solve_ode(device, s, x_1)
+    img = img.view(B, C + C_cond, W, H)
+    if C_cond > 0:
+        img = img[:,:C,:,:]
+    img = img*torch.tensor(config.data.norm_std).view(1,config.data.num_channels,1,1).to(img.device)
+    img = img + torch.tensor(config.data.norm_mean).view(1,config.data.num_channels,1,1).to(img.device)
+
+    meters = {'epoch': epoch, 
+              'RK_function_evals_generation': nfe_gen,
+              'examples': [wandb.Image(stack_imgs(img))]}
+    wandb.log(meters, step=step)
+    
+def evaluate_superres(step, epoch, s, val_loader, device, config):
     B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
     C_cond = config.model.cond_channels
     ydim = config.data.ydim

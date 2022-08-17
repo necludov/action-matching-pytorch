@@ -12,10 +12,10 @@ def get_configs():
     model_dict.dropout = 0.1
     model_dict.resamp_with_conv = True
     model_dict.task = 'heat'
-    model_dict.sigma = 'dimple'
+    model_dict.sigma = 'simple'
     model_dict.skip = True
     model_dict.nonlinearity = 'swish'
-    model_dict.savepath = 'am_mnist'
+    model_dict.savepath = '_'.join(['am', 'mnist', model_dict.task])
     
     data_dict = dotdict()
     data_dict.image_size = 32
@@ -33,13 +33,14 @@ def get_configs():
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
     train_dict.lr = 1e-4
+    train_dict.betas = (0.9, 0.999)
     train_dict.eval_every = 10
     train_dict.first_eval = 10
     train_dict.alpha = 1e0
     
     eval_dict = dotdict()
     eval_dict.batch_size = 100
-    eval_dict.ema = True
+    eval_dict.ema = 0.9999
     eval_dict.n_tries = 1
     
     config_dict = dotdict()
