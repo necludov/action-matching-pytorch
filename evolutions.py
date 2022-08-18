@@ -56,10 +56,11 @@ def get_q(config):
             x = x.reshape([B, C, H, W])
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
             gray_x = x.mean(1,keepdim=True).repeat([1,C,1,1])
-            output = t*gray_x + (1-t)*x + sigma(t)*torch.randn_like(x)
-            if config.model.cond_channels == 1:
-                output = torch.hstack([output, gray_x[:,:1,:,:]])
-                C = C + 1
+            eps = torch.randn_like(x)
+            output = t*gray_x + (1-t)*x + sigma(t)*eps
+            if config.model.cond_channels > 0:
+                output = torch.hstack([output, eps])
+                C = C + config.model.cond_channels
             return output.reshape([B, C*H*W])
         return q_t, sigma, w, dwdt
     elif 'superres' == config.model.task:
@@ -79,10 +80,11 @@ def get_q(config):
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
             downscale_x = torch.nn.functional.interpolate(x, size=(H//2,W//2), mode='nearest')
             downscale_x = torch.nn.functional.interpolate(downscale_x, size=(H,W), mode='bilinear')
-            output = t*downscale_x + (1-t)*x + sigma(t)*torch.randn_like(x)
-            if config.model.cond_channels == 3:
-                output = torch.hstack([output, downscale_x])
-                C = C + 3
+            eps = torch.randn_like(x)
+            output = t*downscale_x + (1-t)*x + sigma(t)*eps
+            if config.model.cond_channels > 0:
+                output = torch.hstack([output, eps])
+                C = C + config.model.cond_channels
             return output.reshape([B, C*H*W])
         return q_t, sigma, w, dwdt
     else:
@@ -118,10 +120,16 @@ def get_q_diffusion(config):
         while (data.dim() > t.dim()): t = t.unsqueeze(-1)
         ydim = config.data.ydim
         if ydim > 0:
-            x_0 = data[:,:-ydim]
+            x = data[:,:-ydim]
         else:
-            x_0 = data
-        return x_0*alpha(t) + sigma(t)*torch.randn_like(x_0)
+            x = data
+        B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size    
+        eps = torch.randn_like(x)
+        output = x*alpha(t) + sigma(t)*eps
+        if config.model.cond_channels > 0:
+            output = torch.hstack([output, eps])
+            C = C + config.model.cond_channels
+        return output.reshape([B, C*H*W])
     return q_t, sigma, w, dwdt
 
 

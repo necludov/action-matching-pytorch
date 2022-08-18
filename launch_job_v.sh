@@ -4,7 +4,7 @@
 #SBATCH --mem=16G
 #SBATCH --cpus-per-task=4
 #SBATCH --partition=t4v2,t4v1,rtx6000,p100
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:2
 #SBATCH --qos=normal
 
 # Append is important because otherwise preemption resets the file
@@ -19,7 +19,7 @@ touch /checkpoint/${USER}/${SLURM_JOB_ID}/DELAYPURGE
 
 . /ssd003/home/${USER}/.bashrc
 conda activate /ssd003/home/${USER}/condaenvs/pytorch-env
-python train_cifar.py --checkpoint_dir $PWD/checkpoint/${SLURM_JOB_ID}
+python launch.py --checkpoint_dir $PWD/checkpoint/${SLURM_JOB_ID} --dataset cifar
 
 echo `date`: "Job $SLURM_JOB_ID finished running, exit code: $?"
 

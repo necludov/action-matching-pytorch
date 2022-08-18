@@ -209,24 +209,33 @@ def evaluate(step, epoch, s, val_loader, device, config):
         
 def evaluate_diffusion(step, epoch, s, val_loader, device, config):
     B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
+    C_cond = config.model.cond_channels
     ydim = config.data.ydim
-    x_1 = torch.randn(B, C*W*H).to(device)
+    x, y = next(iter(val_loader))
+    x, y = x.to(device)[:B], y.to(device)[:B]
+    x = x.view(B, C*W*H)
+    y = torch.nn.functional.one_hot(y, num_classes=config.data.ydim).float()
+    x = torch.hstack([x, y])
+    q_t, sigma, w, dwdt = get_q(config)
+    x_1 = q_t(x, torch.ones([B, 1]).to(device))
     img, nfe_gen = solve_ode(device, s, x_1)
-    img = img.view(B, C, W, H)
+    img = img.view(B, C + C_cond, W, H)
+    if C_cond > 0:
+        img = img[:,:C,:,:]
     img = img*torch.tensor(config.data.norm_std).view(1,config.data.num_channels,1,1).to(img.device)
     img = img + torch.tensor(config.data.norm_mean).view(1,config.data.num_channels,1,1).to(img.device)
 
-    x_0, y_1 = next(iter(val_loader))
-    x_0, y_1 = x_0.to(device)[:B], y_1.to(device)[:B]
-    x_0 = x_0.view(B, C*W*H)
-    logp, z, nfe_ll = get_likelihood(device, s, x_0, method='euler')
-    bpd = get_bpd(device, logp, x_0, lacedaemon=config.data.lacedaemon)
-    bpd = bpd.mean().cpu().numpy()
+#     x_0, y_1 = next(iter(val_loader))
+#     x_0, y_1 = x_0.to(device)[:B], y_1.to(device)[:B]
+#     x_0 = x_0.view(B, C*W*H)
+#     logp, z, nfe_ll = get_likelihood(device, s, x_0, method='euler')
+#     bpd = get_bpd(device, logp, x_0, lacedaemon=config.data.lacedaemon)
+#     bpd = bpd.mean().cpu().numpy()
 
     meters = {'epoch': epoch, 
               'RK_function_evals_generation': nfe_gen,
-              'RK_function_evals_likelihood': nfe_ll,
-              'likelihood(BPD)': bpd,
+#               'RK_function_evals_likelihood': nfe_ll,
+#               'likelihood(BPD)': bpd,
               'examples': [wandb.Image(stack_imgs(img))]}
     wandb.log(meters, step=step)
     

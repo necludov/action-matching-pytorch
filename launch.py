@@ -15,15 +15,19 @@ from tqdm.auto import tqdm, trange
 
 from models import anet
 from models import ema
-from train import train
+from train_utils import train
 
-from utils import get_dataset_MNIST
-from config_mnist import get_configs
     
-def launch_traininig(config, state=None):
+def launch_traininig(args, config, state=None):
     device = torch.device('cuda')
     wandb.login()
-    train_loader, val_loader = get_dataset_MNIST(config)
+    if 'mnist' == args.dataset:
+        from utils import get_dataset_MNIST as get_dataset
+    elif 'cifar' == args.dataset:
+        from utils import get_dataset_CIFAR10 as get_dataset
+    else:
+        raise NameError('unknown dataset')
+    train_loader, val_loader = get_dataset(config)
 
     net = nn.DataParallel(anet.ActionNet(config))
     net.to(device)
@@ -33,11 +37,11 @@ def launch_traininig(config, state=None):
     
     if state is not None:
         net.load_state_dict(state['model'], strict=True)
-        ema_.load_state_dict(state['ema'], strict=True)
+        ema_.load_state_dict(state['ema'])
         optim.load_state_dict(state['optim'], strict=True)
         print('dicts are successfully loaded')
 
-    wandb.init(id=config.train.wandbid, project='mnist_' + config.model.task, resume="allow")
+    wandb.init(id=config.train.wandbid, project=args.dataset + '_' + config.model.task, resume="allow")
     train(net, train_loader, val_loader, optim, ema_, config.train.n_epochs, device, config)
     
 def main(args):
@@ -54,12 +58,18 @@ def main(args):
         else:
             state = None
     else:
+        if 'mnist' == args.dataset:
+            from config_mnist import get_configs
+        elif 'cifar' == args.dataset:
+            from config_cifar10_32 import get_configs
+        else:
+            raise NameError('unknown dataset')
         config = get_configs()
         config.model.savepath = os.path.join(args.checkpoint_dir, config.model.savepath)
         config.train.wandbid = wandb.util.generate_id()
         torch.save(config, config.model.savepath + '.config')
         state = None
-    launch_traininig(config, state)
+    launch_traininig(args, config, state)
 
 
 if __name__ == "__main__":
@@ -72,6 +82,13 @@ if __name__ == "__main__":
         type=str,
         help='path to save and look for the checkpoint file',
         default=os.getcwd()
+    )
+    
+    parser.add_argument(
+        '--dataset',
+        type=str,
+        help='dataset: mnist or cifar',
+        default='cifar'
     )
     
     main(parser.parse_args())
