@@ -12,7 +12,7 @@ def get_configs():
     model_dict.dropout = 0.1
     model_dict.resamp_with_conv = True
     model_dict.task = 'diffusion'
-    model_dict.sigma = 'dimple'
+    model_dict.sigma = 'vpsde'
     model_dict.skip = True
     model_dict.nonlinearity = 'swish'
     model_dict.savepath = '_'.join(['am', 'mnist', model_dict.task])
@@ -39,7 +39,7 @@ def get_configs():
     train_dict.eval_every = 5
     train_dict.save_every = 1
     train_dict.first_eval = 0
-    train_dict.alpha = 1e-2
+    train_dict.alpha = 1.0
     train_dict.wandbid = None
     
     eval_dict = dotdict()

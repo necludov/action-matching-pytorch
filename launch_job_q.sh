@@ -18,7 +18,7 @@ mkdir -p $PWD/checkpoint/${SLURM_JOB_ID}
 
 . /h/${USER}/.bashrc
 conda activate /h/${USER}/condaenvs/pytorch-env
-python train_mnist.py --checkpoint_dir $PWD/checkpoint/${SLURM_JOB_ID}
+python train_cifar.py --checkpoint_dir $PWD/checkpoint/${SLURM_JOB_ID} --dataset mnist
 
 echo `date`: "Job $SLURM_JOB_ID finished running, exit code: $?"
 
