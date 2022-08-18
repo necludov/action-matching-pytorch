@@ -46,7 +46,7 @@ def main(args):
     has_config = len(configs) > 0
     if has_config:
         assert len(configs) == 1
-        config = torch.load(configs[0])
+        config = torch.load(os.path.join(args.checkpoint_dir, configs[0]))
         print('starting from existing config')
         if config.model.last_checkpoint is not None:
             state = torch.load(config.model.last_checkpoint)

@@ -7,11 +7,11 @@ def get_configs():
     model_dict.ch_mult = (1, 2, 2, 2)
     model_dict.num_res_blocks = 2
     model_dict.num_channels = 3
-    model_dict.cond_channels = 0
+    model_dict.cond_channels = 1
     model_dict.attn_resolutions = (16, 8)
     model_dict.dropout = 0.1
     model_dict.resamp_with_conv = True
-    model_dict.task = 'diffusion'
+    model_dict.task = 'color'
     model_dict.sigma = 'dimple'
     model_dict.skip = True
     model_dict.nonlinearity = 'swish'
@@ -33,8 +33,8 @@ def get_configs():
     train_dict = dotdict()
     train_dict.n_epochs = 1000
     train_dict.grad_clip = 1.0
-    train_dict.warmup = 5000
-    train_dict.lr = 2e-4
+    train_dict.warmup = 0
+    train_dict.lr = 1e-4
     train_dict.betas = (0.9, 0.999)
     train_dict.eval_every = 5
     train_dict.save_every = 1
