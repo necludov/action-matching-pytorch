@@ -128,7 +128,7 @@ class AdaptiveLoss:
         s_1_std = s(t_1,x_1).sum(1).detach().cpu().std()
         s_0_std = s(t_0,x_0).sum(1).detach().cpu().std()
 
-        dmetricdt = (0.5*(dsdx**2).sum(1)*w(t.squeeze())).detach()
+        dmetricdt = (0.5*(dsdx**2).sum(1)).detach()
         self.update_history(dmetricdt, t)
         return loss.mean(), (dsdx_std, dsdt_std, s_std, s_1_std, s_0_std)
 
