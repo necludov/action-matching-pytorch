@@ -38,7 +38,7 @@ def launch_traininig(args, config, state=None):
     if state is not None:
         net.load_state_dict(state['model'], strict=True)
         ema_.load_state_dict(state['ema'])
-        optim.load_state_dict(state['optim'], strict=True)
+        optim.load_state_dict(state['optim'])
         print('dicts are successfully loaded')
 
     wandb.init(id=config.train.wandbid, project=args.dataset + '_' + config.model.task, resume="allow")
