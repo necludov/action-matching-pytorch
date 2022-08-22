@@ -128,7 +128,7 @@ class AdaptiveLoss:
         s_1_std = s(t_1,x_1).sum(1).detach().cpu().std()
         s_0_std = s(t_0,x_0).sum(1).detach().cpu().std()
 
-        dmetricdt = (0.5*(dsdx**2).sum(1)).detach()
+        dmetricdt = ((dsdx**2).sum(1)).detach()
         self.update_history(dmetricdt, t)
         return loss.mean(), (dsdx_std, dsdt_std, s_std, s_1_std, s_0_std)
 
@@ -136,15 +136,13 @@ class AdaptiveLoss:
 def train(net, train_loader, val_loader, optim, ema, epochs, device, config):
     s = get_s(net, config)
     q_t, sigma, w, dwdt = get_q(config)
-    loss_AM = AdaptiveLoss(alpha=config.train.alpha)
+    loss_AM = AdaptiveLoss(config.model.t0, config.model.t1, alpha=config.train.alpha)
     step = 0
     for epoch in trange(epochs):
         net.train()
         for x, y in train_loader:
             x, y = x.to(device), y.to(device)
-            x = x.view(train_loader.batch_size, -1)
-            y = torch.nn.functional.one_hot(y, num_classes=config.data.ydim).float()
-            x = torch.hstack([x, y])
+            x = flatten_data(x, y, config)
             loss_total, stds = loss_AM.get_loss(s, x, q_t, w, dwdt)
             optim.zero_grad()
             loss_total.backward()
@@ -210,16 +208,16 @@ def evaluate(step, epoch, s, val_loader, device, config):
 def evaluate_diffusion(step, epoch, s, val_loader, device, config):
     B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
     C_cond = config.model.cond_channels
+    t0, t1 = config.model.t0, config.model.t1
     ydim = config.data.ydim
+    
     x, y = next(iter(val_loader))
     x, y = x.to(device)[:B], y.to(device)[:B]
-    x = x.view(B, C*W*H)
-    y = torch.nn.functional.one_hot(y, num_classes=config.data.ydim).float()
-    x = torch.hstack([x, y])
+    x = flatten_data(x, y, config)
     q_t, sigma, w, dwdt = get_q(config)
-    x_1 = q_t(x, torch.ones([B, 1]).to(device))
-    img, nfe_gen = solve_ode(device, s, x_1)
-    img = img.view(B, C + C_cond, W, H)
+    x_1 = q_t(x, t1*torch.ones([B, 1]).to(device))
+    img, nfe_gen = solve_ode(device, s, x_1, t0=t1, t1=t0)
+    img = img.view(B, C+C_cond, H, W)
     if C_cond > 0:
         img = img[:,:C,:,:]
     img = img*torch.tensor(config.data.norm_std).view(1,config.data.num_channels,1,1).to(img.device)
@@ -337,6 +335,12 @@ def evaluate_cond(step, epoch, s, val_loader, device, config):
               'examples': [wandb.Image(stack_imgs(img))]}
     wandb.log(meters, step=step)
 
+    
+def flatten_data(x,y,config):
+    bs = x.shape[0]
+    x = x.view(bs, -1)
+    y = torch.nn.functional.one_hot(y, num_classes=config.data.ydim).float()
+    return torch.hstack([x, y])
     
 def pairwise_distances(x, y):
     '''

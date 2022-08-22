@@ -108,11 +108,21 @@ def get_q_diffusion(config):
         sigma = lambda t: torch.sqrt(t)
         w = lambda t: t**2*(1-t)
         dwdt = lambda t: 2*t-3*t**2
+    elif 'simple_w=1' == name:
+        alpha = lambda t: torch.sqrt(1-t)
+        sigma = lambda t: torch.sqrt(t)
+        w = lambda t: torch.ones_like(t)
+        dwdt = lambda t: torch.zeros_like(t)
     elif 'dimple' == name:
         alpha = lambda t: 1-t
         sigma = lambda t: t
         w = lambda t: 0.5*t**2
         dwdt = lambda t: t
+    elif 'dimple_w=1' == name:
+        alpha = lambda t: 1-t
+        sigma = lambda t: t
+        w = lambda t: torch.ones_like(t)
+        dwdt = lambda t: torch.zeros_like(t)
     else:
         raise NotImplementedError('there is no %' % label)
     def q_t(data, t):
@@ -124,14 +134,14 @@ def get_q_diffusion(config):
         else:
             x = data
         B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size    
-        eps = torch.randn_like(x)
+        if config.model.uniform:
+            eps = torch.rand_like(x) - 0.5
+        else:
+            eps = torch.randn_like(x)
         output = x*alpha(t) + sigma(t)*eps
-        if config.model.cond_channels > 0:
-            output = torch.hstack([output, eps])
-            C = C + config.model.cond_channels
-        return output.reshape([B, C*H*W])
+        output = output.reshape([B, C*H*W])
+        return output
     return q_t, sigma, w, dwdt
-
 
 def get_s(net, config):
     label = config.model.s

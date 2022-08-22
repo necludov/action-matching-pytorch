@@ -42,6 +42,8 @@ def launch_traininig(args, config, state=None):
         print('dicts are successfully loaded')
 
     wandb.init(id=config.train.wandbid, project=args.dataset + '_' + config.model.task, resume="allow")
+    os.environ["WANDB_RESUME"] = "allow"
+    os.environ["WANDB_RUN_ID"] = config.train.wandbid
     train(net, train_loader, val_loader, optim, ema_, config.train.n_epochs, device, config)
     
 def main(args):

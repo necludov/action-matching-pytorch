@@ -10,9 +10,11 @@ def get_configs():
     model_dict.cond_channels = 0
     model_dict.attn_resolutions = (8,)
     model_dict.dropout = 0.1
+    model_dict.t0, model_dict.t1 = 1e-2, 1.0
     model_dict.resamp_with_conv = True
     model_dict.task = 'diffusion'
-    model_dict.sigma = 'vpsde'
+    model_dict.sigma = 'simple_w=1'
+    model_dict.uniform = False
     model_dict.skip = True
     model_dict.nonlinearity = 'swish'
     model_dict.savepath = '_'.join(['am', 'mnist', model_dict.task])
@@ -37,9 +39,9 @@ def get_configs():
     train_dict.lr = 1e-4
     train_dict.betas = (0.9, 0.999)
     train_dict.eval_every = 5
-    train_dict.save_every = 1
+    train_dict.save_every = 100
     train_dict.first_eval = 0
-    train_dict.alpha = 1.0
+    train_dict.alpha = 1e-2
     train_dict.wandbid = None
     
     eval_dict = dotdict()
