@@ -10,10 +10,10 @@ def get_configs():
     model_dict.cond_channels = 0
     model_dict.attn_resolutions = (16, 8)
     model_dict.dropout = 0.1
-    model_dict.t0, model_dict.t1 = 1e-2, 1.0
+    model_dict.t0, model_dict.t1 = 1e-1, 1.0-1e-1
     model_dict.resamp_with_conv = True
     model_dict.task = 'diffusion'
-    model_dict.sigma = 'dimple_w=1'
+    model_dict.sigma = 'simple_w=1'
     model_dict.uniform = False
     model_dict.skip = True
     model_dict.nonlinearity = 'swish'
@@ -33,6 +33,8 @@ def get_configs():
     data_dict.ydim = 10
     
     train_dict = dotdict()
+    train_dict.current_epoch = 0
+    train_dict.current_step = 0
     train_dict.n_epochs = 1000
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000

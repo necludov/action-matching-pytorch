@@ -14,6 +14,18 @@ def dw1dt(t):
     out = out*torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0))*(beta_0+t*(beta_1-beta_0))
     return out
 
+def w2(t):
+    output = torch.ones_like(t)
+    output[t < 1e-1] = 0.5*t**2
+    output[t > 9e-1] = 0.5*(1-t)**2
+    return output
+
+def dw2dt(t):
+    output = torch.zeros_like(t)
+    output[t < 1e-1] = t
+    output[t > 9e-1] = -(1-t)
+    return output
+
 def w1_cond(t):
     return w1(t)*w1(1-t)
 
@@ -106,23 +118,17 @@ def get_q_diffusion(config):
     elif 'simple' == name:
         alpha = lambda t: torch.sqrt(1-t)
         sigma = lambda t: torch.sqrt(t)
-        w = lambda t: t**2*(1-t)
-        dwdt = lambda t: 2*t-3*t**2
-    elif 'simple_w=1' == name:
-        alpha = lambda t: torch.sqrt(1-t)
-        sigma = lambda t: torch.sqrt(t)
-        w = lambda t: torch.ones_like(t)
-        dwdt = lambda t: torch.zeros_like(t)
+        w = w2
+        dwdt = dw2dt
+#         w = lambda t: t**2*(1-t)
+#         dwdt = lambda t: 2*t-3*t**2
     elif 'dimple' == name:
         alpha = lambda t: 1-t
         sigma = lambda t: t
-        w = lambda t: 0.5*t**2
-        dwdt = lambda t: t
-    elif 'dimple_w=1' == name:
-        alpha = lambda t: 1-t
-        sigma = lambda t: t
-        w = lambda t: torch.ones_like(t)
-        dwdt = lambda t: torch.zeros_like(t)
+        w = w2
+        dwdt = dw2dt
+#         w = lambda t: 0.5*t**2
+#         dwdt = lambda t: t
     else:
         raise NotImplementedError('there is no %' % label)
     def q_t(data, t):

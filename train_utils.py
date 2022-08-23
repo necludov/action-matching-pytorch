@@ -21,12 +21,13 @@ import scipy.interpolate
 
 
 class AdaptiveLoss:
-    def __init__(self, t0=0.0, t1=1.0, n=50, alpha=1e-2, beta=0.99):
+    def __init__(self, t0=0.0, t1=1.0, n=50, alpha=1e-2, beta=0.99, use_var=False):
         self.t0, self.t1 = t0, t1
         self.alpha, self.beta = alpha, beta
         self.timesteps = np.linspace(t0, t1, n)
         self.dt = (t1-t0)/(n-1)
         self.mean = None
+        self.use_var = use_var
         self.buffer_values = []
         self.buffer_times = []
         self.construct_dist(np.ones_like(self.timesteps))
@@ -74,11 +75,6 @@ class AdaptiveLoss:
     
     def update_history(self, new_w, t):
         new_w, t = new_w.cpu().numpy().flatten(), t.cpu().numpy().flatten()
-        self.buffer_values.append(new_w)
-        self.buffer_times.append(t)
-        if len(self.buffer_values) > 100:
-            self.buffer_values.pop(0)
-            self.buffer_times.pop(0)
         weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
         weights = weights/weights.sum(1,keepdims=True)
         if self.mean is None:
@@ -86,19 +82,28 @@ class AdaptiveLoss:
         else:
             self.mean = self.beta*self.mean + (1-self.beta)*(weights@new_w)
         mean_func = scipy.interpolate.interp1d(self.timesteps, self.mean, kind='linear')
-        var = np.zeros_like(self.timesteps)
-        for i in range(len(self.buffer_values)):
-            t = self.buffer_times[i]
-            weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
-            weights = weights/weights.sum(1,keepdims=True)
-            var += weights@((mean_func(t) - self.buffer_values[i])**2)
-        var /= len(self.buffer_values)
-        if len(self.buffer_values) < 100:
-            self.construct_dist(np.ones_like(self.timesteps))
+
+        if self.use_var:
+            self.buffer_values.append(new_w)
+            self.buffer_times.append(t)
+            if len(self.buffer_values) > 100:
+                self.buffer_values.pop(0)
+                self.buffer_times.pop(0)
+            var = np.zeros_like(self.timesteps)
+            for i in range(len(self.buffer_values)):
+                t = self.buffer_times[i]
+                weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
+                weights = weights/weights.sum(1,keepdims=True)
+                var += weights@((mean_func(t) - self.buffer_values[i])**2)
+            var /= len(self.buffer_values)
+            if len(self.buffer_values) < 100:
+                self.construct_dist(np.ones_like(self.timesteps))
+            else:
+                self.construct_dist(var)
         else:
             self.construct_dist(self.mean)
     
-    def get_loss(self, s, x, q_t, w, dwdt):
+    def get_loss(self, s, x, q_t, w, dwdt, boundary_conditions=True):
         assert (2 == x.dim())
         t_0, t_1 = self.t0, self.t1
         device = x.device
@@ -111,39 +116,52 @@ class AdaptiveLoss:
         assert (2 == s_t.dim())
         dsdt, dsdx = torch.autograd.grad(s_t.sum(), [t, x_t], create_graph=True, retain_graph=True)
         x_t, t = x_t.detach(), t.detach()
-
-        t_0 = t_0*torch.ones([bs, 1]).to(device)
-        x_0 = q_t(x, t_0)
-
-        t_1 = t_1*torch.ones([bs, 1]).to(device)
-        x_1 = q_t(x, t_1)
-
+        
         loss = (0.5*(dsdx**2).sum(1, keepdim=True) + dsdt.sum(1, keepdim=True))*w(t)
         dsdx_std = 0.5*(dsdx**2).sum(1).detach().cpu().std()
         dsdt_std = dsdt.sum(1).detach().cpu().std()
         loss = loss + s_t*dwdt(t)
         s_std = s_t.sum(1).detach().cpu().std()
         loss = loss.squeeze()/p_t
-        loss = loss + (-s(t_1,x_1)*w(t_1) + s(t_0,x_0)*w(t_0)).squeeze()
-        s_1_std = s(t_1,x_1).sum(1).detach().cpu().std()
-        s_0_std = s(t_0,x_0).sum(1).detach().cpu().std()
+
+        s_1_std, s_0_std = 0.0, 0.0
+        if boundary_conditions:
+            t_0 = t_0*torch.ones([bs, 1]).to(device)
+            x_0 = q_t(x, t_0)
+
+            t_1 = t_1*torch.ones([bs, 1]).to(device)
+            x_1 = q_t(x, t_1)
+
+            loss = loss + (-s(t_1,x_1)*w(t_1) + s(t_0,x_0)*w(t_0)).squeeze()
+            s_1_std = s(t_1,x_1).sum(1).detach().cpu().std()
+            s_0_std = s(t_0,x_0).sum(1).detach().cpu().std()
 
         dmetricdt = ((dsdx**2).sum(1)).detach()
         self.update_history(dmetricdt, t)
         return loss.mean(), (dsdx_std, dsdt_std, s_std, s_1_std, s_0_std)
 
     
-def train(net, train_loader, val_loader, optim, ema, epochs, device, config):
+def train(net, train_loader, val_loader, optim, ema, device, config):
     s = get_s(net, config)
     q_t, sigma, w, dwdt = get_q(config)
+    boundary_conditions = True
+    if (w(config.model.t0) == 0.0) and (w(config.model.t1) == 0.0):
+        config.train.boundary_conditions = 'off'
+        print('boundary conditions are off')
+        boundary_conditions = False
+    else:
+        config.train.boundary_conditions = 'on'
+        print('boundary conditions are on')
+    print('w0, w1 = %.5e, %.5e' % (w(config.model.t0), w(config.model.t1)))
+    
     loss_AM = AdaptiveLoss(config.model.t0, config.model.t1, alpha=config.train.alpha)
-    step = 0
-    for epoch in trange(epochs):
+    step = config.train.current_step
+    for epoch in trange(config.train.current_epoch, config.train.n_epochs):
         net.train()
         for x, y in train_loader:
             x, y = x.to(device), y.to(device)
             x = flatten_data(x, y, config)
-            loss_total, stds = loss_AM.get_loss(s, x, q_t, w, dwdt)
+            loss_total, stds = loss_AM.get_loss(s, x, q_t, w, dwdt, boundary_conditions)
             optim.zero_grad()
             loss_total.backward()
 
@@ -164,50 +182,36 @@ def train(net, train_loader, val_loader, optim, ema, epochs, device, config):
                            's_0_std': s_0_std}, step=step)
             step += 1
         if ((epoch % config.train.save_every) == 0):
-            config.model.last_checkpoint = config.model.savepath + '_%d.cpt' % epoch
-            config.train.n_epochs -= 1 
-            torch.save({'model': net.state_dict(), 
-                        'ema': ema.state_dict(), 
-                        'optim': optim.state_dict()}, config.model.last_checkpoint)
-            torch.save(config, config.model.savepath + '.config')
+            save(step, epoch, net, ema, optim, config)
         
         if ((epoch % config.train.eval_every) == 0) and (epoch >= config.train.first_eval):
-            ema.store(net.parameters())
-            ema.copy_to(net.parameters())
-            net.eval()
-            evaluate(step, epoch, s, val_loader, device, config)
-            ema.restore(net.parameters())
+            evaluate(step, epoch, net, ema, s, val_loader, device, config)
+    save(step, epoch, net, ema, optim, config)
+    evaluate(step, epoch, net, ema, s, val_loader, device, config)
+
             
-    config.model.last_checkpoint = config.model.savepath + '_%d.cpt' % epoch
-    torch.save({'model': net.state_dict(), 
-                'ema': ema.state_dict(), 
-                'optim': optim.state_dict()}, config.model.last_checkpoint)
-    torch.save(config, config.model.savepath + '.config')
+def evaluate(step, epoch, net, ema, s, val_loader, device, config):
     ema.store(net.parameters())
     ema.copy_to(net.parameters())
     net.eval()
-    evaluate(step, epoch, s, val_loader, device, config)
-    ema.restore(net.parameters())    
-            
-def evaluate(step, epoch, s, val_loader, device, config):
     if 'diffusion' == config.model.task:
-        return evaluate_diffusion(step, epoch, s, val_loader, device, config)
+        evaluate_diffusion(step, epoch, s, val_loader, device, config)
     elif 'heat' == config.model.task:
-        return evaluate_heat(step, epoch, s, val_loader, device, config)
+        evaluate_heat(step, epoch, s, val_loader, device, config)
     elif 'conditional' == config.model.task:
-        return evaluate_cond(step, epoch, s, val_loader, device, config)
+        evaluate_cond(step, epoch, s, val_loader, device, config)
     elif 'augmented' == config.model.task:
-        return evaluate_augmented(step, epoch, s, val_loader, device, config)
+        evaluate_augmented(step, epoch, s, val_loader, device, config)
     elif 'color' == config.model.task:
-        return evaluate_color(step, epoch, s, val_loader, device, config)
+        evaluate_color(step, epoch, s, val_loader, device, config)
     elif 'superres' == config.model.task:
-        return evaluate_superres(step, epoch, s, val_loader, device, config)
+        evaluate_superres(step, epoch, s, val_loader, device, config)
     else:
         raise NameError('config.model.task name is incorrect')
+    ema.restore(net.parameters())   
         
 def evaluate_diffusion(step, epoch, s, val_loader, device, config):
     B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
-    C_cond = config.model.cond_channels
     t0, t1 = config.model.t0, config.model.t1
     ydim = config.data.ydim
     
@@ -217,16 +221,14 @@ def evaluate_diffusion(step, epoch, s, val_loader, device, config):
     q_t, sigma, w, dwdt = get_q(config)
     x_1 = q_t(x, t1*torch.ones([B, 1]).to(device))
     img, nfe_gen = solve_ode(device, s, x_1, t0=t1, t1=t0)
-    img = img.view(B, C+C_cond, H, W)
-    if C_cond > 0:
-        img = img[:,:C,:,:]
+    img = img.view(B, C, H, W)
     img = img*torch.tensor(config.data.norm_std).view(1,config.data.num_channels,1,1).to(img.device)
     img = img + torch.tensor(config.data.norm_mean).view(1,config.data.num_channels,1,1).to(img.device)
 
 #     x_0, y_1 = next(iter(val_loader))
 #     x_0, y_1 = x_0.to(device)[:B], y_1.to(device)[:B]
 #     x_0 = x_0.view(B, C*W*H)
-#     logp, z, nfe_ll = get_likelihood(device, s, x_0, method='euler')
+#     logp, z, nfe_ll = get_likelihood(device, s, x_0)
 #     bpd = get_bpd(device, logp, x_0, lacedaemon=config.data.lacedaemon)
 #     bpd = bpd.mean().cpu().numpy()
 
@@ -335,6 +337,15 @@ def evaluate_cond(step, epoch, s, val_loader, device, config):
               'examples': [wandb.Image(stack_imgs(img))]}
     wandb.log(meters, step=step)
 
+    
+def save(step, epoch, net, ema, optim, config):
+    config.model.last_checkpoint = config.model.savepath + '_%d.cpt' % epoch
+    config.train.current_epoch = epoch
+    config.train.current_step = step
+    torch.save({'model': net.state_dict(), 
+                'ema': ema.state_dict(), 
+                'optim': optim.state_dict()}, config.model.last_checkpoint)
+    torch.save(config, config.model.savepath + '.config')
     
 def flatten_data(x,y,config):
     bs = x.shape[0]

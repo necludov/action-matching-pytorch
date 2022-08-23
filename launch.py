@@ -41,10 +41,13 @@ def launch_traininig(args, config, state=None):
         optim.load_state_dict(state['optim'])
         print('dicts are successfully loaded')
 
-    wandb.init(id=config.train.wandbid, project=args.dataset + '_' + config.model.task, resume="allow")
+    wandb.init(id=config.train.wandbid, 
+               project=args.dataset + '_' + config.model.task, 
+               resume="allow",
+               config=config)
     os.environ["WANDB_RESUME"] = "allow"
     os.environ["WANDB_RUN_ID"] = config.train.wandbid
-    train(net, train_loader, val_loader, optim, ema_, config.train.n_epochs, device, config)
+    train(net, train_loader, val_loader, optim, ema_, device, config)
     
 def main(args):
     filenames = os.listdir(args.checkpoint_dir)

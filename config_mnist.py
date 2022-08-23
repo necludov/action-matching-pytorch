@@ -33,6 +33,8 @@ def get_configs():
     data_dict.ydim = 10
     
     train_dict = dotdict()
+    train_dict.current_epoch = 0
+    train_dict.current_step = 0
     train_dict.n_epochs = 1000
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
