@@ -16,14 +16,14 @@ def dw1dt(t):
 
 def w2(t):
     output = torch.ones_like(t)
-    output[t < 1e-1] = 0.5*t**2
-    output[t > 9e-1] = 0.5*(1-t)**2
+    output[t < 1e-1] = (1e2*t**2)[t < 1e-1]
+    output[t > 9e-1] = (1e2*(1-t)**2)[t > 9e-1]
     return output
 
 def dw2dt(t):
     output = torch.zeros_like(t)
-    output[t < 1e-1] = t
-    output[t > 9e-1] = -(1-t)
+    output[t < 1e-1] = 2e2*t[t < 1e-1]
+    output[t > 9e-1] = -2e2*(1-t)[t > 9e-1]
     return output
 
 def w1_cond(t):
@@ -35,7 +35,7 @@ def dw1dt_cond(t):
 def get_q(config):
     diffusion_based = {'diffusion', 'conditional', 'classification'}
     if config.model.task in diffusion_based:
-        return get_q_diffusion(config)
+        return get_q_diffusion(net, config)
     elif 'heat' == config.model.task:
         sigma = lambda t: t
         w = lambda t: 0.5*t**2
@@ -120,15 +120,11 @@ def get_q_diffusion(config):
         sigma = lambda t: torch.sqrt(t)
         w = w2
         dwdt = dw2dt
-#         w = lambda t: t**2*(1-t)
-#         dwdt = lambda t: 2*t-3*t**2
     elif 'dimple' == name:
         alpha = lambda t: 1-t
         sigma = lambda t: t
         w = w2
         dwdt = dw2dt
-#         w = lambda t: 0.5*t**2
-#         dwdt = lambda t: t
     else:
         raise NotImplementedError('there is no %' % label)
     def q_t(data, t):
@@ -145,6 +141,7 @@ def get_q_diffusion(config):
         else:
             eps = torch.randn_like(x)
         output = x*alpha(t) + sigma(t)*eps
+        output = x*alpha(t) + sigma(t)*gradeps
         output = output.reshape([B, C*H*W])
         return output
     return q_t, sigma, w, dwdt

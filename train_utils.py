@@ -6,6 +6,7 @@ import os
 import shutil
 import torch.distributions as D
 
+from copy import deepcopy
 from torch import nn
 from torchvision import transforms
 from torchvision.datasets import CIFAR10, MNIST
@@ -40,7 +41,7 @@ class AdaptiveLoss:
         self.dpdt = scipy.interpolate.interp1d(t, np.concatenate([p[1:]-p[:-1], p[-1:]-p[-2:-1]])/dt, kind='zero')
         intercept = lambda t: self.fp(t)-self.dpdt(t)*t
         t0_interval = scipy.interpolate.interp1d(t, t, kind='zero')
-        mass = np.concatenate([np.zeros([1]), ((p[1:]+p[:-1])*dt/2).cumsum()])
+        mass = np.concatenate([np.zeros([1]), ((p[1:]+p[:-1])*dt/2).cumsum()[:-1], np.ones([1])])
         F0_interval = scipy.interpolate.interp1d(t, mass, kind='zero')
         F0_inv = scipy.interpolate.interp1d(mass, t, kind='zero')
         def F(t):
@@ -145,16 +146,16 @@ def train(net, train_loader, val_loader, optim, ema, device, config):
     s = get_s(net, config)
     q_t, sigma, w, dwdt = get_q(config)
     boundary_conditions = True
-    if (w(config.model.t0) == 0.0) and (w(config.model.t1) == 0.0):
+    if (w(torch.tensor(config.model.t0)) == 0.0) and (w(torch.tensor(config.model.t1)) == 0.0):
         config.train.boundary_conditions = 'off'
         print('boundary conditions are off')
         boundary_conditions = False
     else:
         config.train.boundary_conditions = 'on'
         print('boundary conditions are on')
-    print('w0, w1 = %.5e, %.5e' % (w(config.model.t0), w(config.model.t1)))
+    print('w0, w1 = %.5e, %.5e' % (w(torch.tensor(config.model.t0)), w(torch.tensor(config.model.t1))))
     
-    loss_AM = AdaptiveLoss(config.model.t0, config.model.t1, alpha=config.train.alpha)
+    loss_AM = AdaptiveLoss(config.model.t0, config.model.t1, alpha=config.train.alpha, use_var=config.train.use_var)
     step = config.train.current_step
     for epoch in trange(config.train.current_epoch, config.train.n_epochs):
         net.train()
@@ -185,17 +186,17 @@ def train(net, train_loader, val_loader, optim, ema, device, config):
             save(step, epoch, net, ema, optim, config)
         
         if ((epoch % config.train.eval_every) == 0) and (epoch >= config.train.first_eval):
-            evaluate(step, epoch, net, ema, s, val_loader, device, config)
+            evaluate(step, epoch, q_t, net, ema, s, val_loader, device, config)
     save(step, epoch, net, ema, optim, config)
-    evaluate(step, epoch, net, ema, s, val_loader, device, config)
+    evaluate(step, epoch, q_t, net, ema, s, val_loader, device, config)
 
             
-def evaluate(step, epoch, net, ema, s, val_loader, device, config):
+def evaluate(step, epoch, q_t, net, ema, s, val_loader, device, config):
     ema.store(net.parameters())
     ema.copy_to(net.parameters())
     net.eval()
     if 'diffusion' == config.model.task:
-        evaluate_diffusion(step, epoch, s, val_loader, device, config)
+        evaluate_diffusion(step, epoch, q_t, s, val_loader, device, config)
     elif 'heat' == config.model.task:
         evaluate_heat(step, epoch, s, val_loader, device, config)
     elif 'conditional' == config.model.task:
@@ -210,7 +211,7 @@ def evaluate(step, epoch, net, ema, s, val_loader, device, config):
         raise NameError('config.model.task name is incorrect')
     ema.restore(net.parameters())   
         
-def evaluate_diffusion(step, epoch, s, val_loader, device, config):
+def evaluate_diffusion(step, epoch, q_t, s, val_loader, device, config):
     B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
     t0, t1 = config.model.t0, config.model.t1
     ydim = config.data.ydim
@@ -218,9 +219,8 @@ def evaluate_diffusion(step, epoch, s, val_loader, device, config):
     x, y = next(iter(val_loader))
     x, y = x.to(device)[:B], y.to(device)[:B]
     x = flatten_data(x, y, config)
-    q_t, sigma, w, dwdt = get_q(config)
     x_1 = q_t(x, t1*torch.ones([B, 1]).to(device))
-    img, nfe_gen = solve_ode(device, s, x_1, t0=t1, t1=t0)
+    img, nfe_gen = solve_ode(device, s, x_1, t0=t1, t1=t0, method='euler')
     img = img.view(B, C, H, W)
     img = img*torch.tensor(config.data.norm_std).view(1,config.data.num_channels,1,1).to(img.device)
     img = img + torch.tensor(config.data.norm_mean).view(1,config.data.num_channels,1,1).to(img.device)
