@@ -220,7 +220,7 @@ def evaluate_diffusion(step, epoch, q_t, s, val_loader, device, config):
     x, y = x.to(device)[:B], y.to(device)[:B]
     x = flatten_data(x, y, config)
     x_1 = q_t(x, t1*torch.ones([B, 1]).to(device))
-    img, nfe_gen = solve_ode(device, s, x_1, t0=t1, t1=t0, method='euler')
+    img, nfe_gen = solve_ode(device, s, x_1, t0=t1, t1=t0)
     img = img.view(B, C, H, W)
     img = img*torch.tensor(config.data.norm_std).view(1,config.data.num_channels,1,1).to(img.device)
     img = img + torch.tensor(config.data.norm_mean).view(1,config.data.num_channels,1,1).to(img.device)

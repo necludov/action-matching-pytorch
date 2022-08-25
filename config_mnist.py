@@ -10,7 +10,7 @@ def get_configs():
     model_dict.cond_channels = 0
     model_dict.attn_resolutions = (8,)
     model_dict.dropout = 0.1
-    model_dict.t0, model_dict.t1 = 1e-1, 1.0
+    model_dict.t0, model_dict.t1 = 0.0, 1.0
     model_dict.resamp_with_conv = True
     model_dict.task = 'diffusion'
     model_dict.sigma = 'dimple'
@@ -40,6 +40,7 @@ def get_configs():
     train_dict.warmup = 5000
     train_dict.lr = 1e-4
     train_dict.betas = (0.9, 0.999)
+    train_dict.wd = 1e-3
     train_dict.eval_every = 5
     train_dict.save_every = 100
     train_dict.first_eval = 0

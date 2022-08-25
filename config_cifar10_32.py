@@ -40,6 +40,7 @@ def get_configs():
     train_dict.warmup = 5000
     train_dict.lr = 1e-4
     train_dict.betas = (0.9, 0.999)
+    train_dict.wd = 0.0
     train_dict.eval_every = 5
     train_dict.save_every = 1
     train_dict.first_eval = 0

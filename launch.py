@@ -33,7 +33,8 @@ def launch_traininig(args, config, state=None):
     net = anet.ActionNet(config)
     net.to(device)
 
-    optim = torch.optim.Adam(net.parameters(), lr=config.train.lr, betas=config.train.betas, eps=1e-8, weight_decay=0)
+    optim = torch.optim.Adam(net.parameters(), lr=config.train.lr, betas=config.train.betas, 
+                             eps=1e-8, weight_decay=config.train.wd)
     ema_ = ema.ExponentialMovingAverage(net.parameters(), decay=config.eval.ema)
     
     if state is not None:
