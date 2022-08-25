@@ -129,5 +129,5 @@ dmypy.json
 .pyre/
 
 # slurm out
-.out
+*.out
 
