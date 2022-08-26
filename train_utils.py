@@ -16,7 +16,7 @@ from tqdm.auto import tqdm, trange
 
 from evaluation import *
 from evolutions import get_s, get_q
-from utils import stack_imgs, DDPAverageMeter
+from utils import stack_imgs
 
 import scipy.interpolate
 
@@ -69,9 +69,9 @@ class AdaptiveLoss:
         t = self.F_inv(u)
         p_t, dpdt = self.fp(t), self.dpdt(t)
         p_0, p_1 = self.fp(self.t0*np.ones_like(t)), self.fp(self.t1*np.ones_like(t))
-        t = torch.from_numpy(t).to(device, non_blocking=True).float()
-        p_t, dpdt = torch.from_numpy(p_t).to(device, non_blocking=True).float(), torch.from_numpy(dpdt).to(device, non_blocking=True).float()
-        p_0, p_1 = torch.from_numpy(p_0).to(device, non_blocking=True).float(), torch.from_numpy(p_1).to(device, non_blocking=True).float()
+        t = torch.from_numpy(t).to(device).float()
+        p_t, dpdt = torch.from_numpy(p_t).to(device).float(), torch.from_numpy(dpdt).to(device).float()
+        p_0, p_1 = torch.from_numpy(p_0).to(device).float(), torch.from_numpy(p_1).to(device).float()
         return t, p_t
     
     def update_history(self, new_w, t):
@@ -127,10 +127,10 @@ class AdaptiveLoss:
 
         s_1_std, s_0_std = 0.0, 0.0
         if boundary_conditions:
-            t_0 = t_0*torch.ones([bs, 1]).to(device, non_blocking=True)
+            t_0 = t_0*torch.ones([bs, 1]).to(device)
             x_0 = q_t(x, t_0)
 
-            t_1 = t_1*torch.ones([bs, 1]).to(device, non_blocking=True)
+            t_1 = t_1*torch.ones([bs, 1]).to(device)
             x_1 = q_t(x, t_1)
 
             loss = loss + (-s(t_1,x_1)*w(t_1) + s(t_0,x_0)*w(t_0)).squeeze()
@@ -143,13 +143,6 @@ class AdaptiveLoss:
 
     
 def train(net, train_loader, val_loader, optim, ema, device, config):
-    losses = DDPAverageMeter('loss')
-    dsdx_std = DDPAverageMeter('dsdx_std')
-    dsdt_std = DDPAverageMeter('dsdt_std')
-    s_std = DDPAverageMeter('s_std')
-    s_1_std = DDPAverageMeter('s_1_std')
-    s_0_std = DDPAverageMeter('s_0_std')
-    
     s = get_s(net, config)
     q_t, sigma, w, dwdt = get_q(config)
     boundary_conditions = True
@@ -167,17 +160,9 @@ def train(net, train_loader, val_loader, optim, ema, device, config):
     for epoch in trange(config.train.current_epoch, config.train.n_epochs):
         net.train()
         for x, y in train_loader:
-            x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
+            x, y = x.to(device), y.to(device)
             x = flatten_data(x, y, config)
             loss_total, stds = loss_AM.get_loss(s, x, q_t, w, dwdt, boundary_conditions)
-            _dsdx_std, _dsdt_std, _s_std, _s_1_std, _s_0_std = stds
-            losses.update(loss_total)
-            dsdx_std.update(_dsdx_std)
-            dsdt_std.update(_dsdt_std)
-            s_std.update(_s_std)
-            s_1_std.update(_s_1_std)
-            s_0_std.update(_s_0_std)
-            
             optim.zero_grad()
             loss_total.backward()
 
@@ -188,29 +173,22 @@ def train(net, train_loader, val_loader, optim, ema, device, config):
                 torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=config.train.grad_clip)
             optim.step()
             ema.update(net.parameters())
-            
-            if ((step % 50) == 0) and is_main_host():
-                wandb.log({'train_loss': losses.get_val(),
-                           'dsdx_std': dsdx_std.get_val(),
-                           'dsdt_std': dsdt_std.get_val(),
-                           's_std': s_std.get_val(),
-                           's_1_std': s_1_std.get_val(),
-                           's_0_std': s_0_std.get_val()}, step=step)
-                losses.reset()
-                dsdx_std.reset()
-                dsdt_std.reset()
-                s_std.reset()
-                s_1_std.reset()
-                s_0_std.reset()
+            dsdx_std, dsdt_std, s_std, s_1_std, s_0_std = stds
+            if (step % 50) == 0:
+                wandb.log({'train_loss': loss_total,
+                           'dsdx_std': dsdx_std,
+                           'dsdt_std': dsdt_std,
+                           's_std': s_std,
+                           's_1_std': s_1_std,
+                           's_0_std': s_0_std}, step=step)
             step += 1
-        if ((epoch % config.train.save_every) == 0) and is_main_host():
+        if ((epoch % config.train.save_every) == 0):
             save(step, epoch, net, ema, optim, config)
         
-        if ((epoch % config.train.eval_every) == 0) and (epoch >= config.train.first_eval) and is_main_host():
+        if ((epoch % config.train.eval_every) == 0) and (epoch >= config.train.first_eval):
             evaluate(step, epoch, q_t, net, ema, s, val_loader, device, config)
-    if is_main_host():
-        save(step, epoch, net, ema, optim, config)
-        evaluate(step, epoch, q_t, net, ema, s, val_loader, device, config)
+    save(step, epoch, net, ema, optim, config)
+    evaluate(step, epoch, q_t, net, ema, s, val_loader, device, config)
 
             
 def evaluate(step, epoch, q_t, net, ema, s, val_loader, device, config):
@@ -359,10 +337,6 @@ def evaluate_cond(step, epoch, s, val_loader, device, config):
               'examples': [wandb.Image(stack_imgs(img))]}
     wandb.log(meters, step=step)
 
-def is_main_host():
-    if "RANK" not in os.environ:
-        raise RuntimeError("RANK not found in environment variables!")
-    return int(os.environ["RANK"]) == 0
     
 def save(step, epoch, net, ema, optim, config):
     config.model.last_checkpoint = config.model.savepath + '_%d.cpt' % epoch

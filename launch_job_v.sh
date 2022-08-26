@@ -8,8 +8,8 @@
 #SBATCH --partition=t4v2,t4v1,rtx6000,p100
 #SBATCH --gres=gpu:2
 #SBATCH --qos=normal
-#SBATCH --output=%j.out
-#SBATCH --error=%j.err
+#SBATCH --output=job_%x_%j.out
+#SBATCH --error=job_%x_%j.err
 # Append is important because otherwise preemption resets the file
 #SBATCH --open-mode=append
 
@@ -40,8 +40,8 @@ fi
 # they are not expanded here
 
 mkdir -p workdir_${SLURM_JOB_ID}
-cp ddp_worker.sh  workdir_${SLURM_JOB_ID}/
-cd workdir_${SLURM_JOB_ID}
+cp -r ./source ddp_worker.sh  workdir_${SLURM_JOB_ID}/
+cd  workdir_${SLURM_JOB_ID}
 
 # Checkpointing, never forget to do this
 # ln -sfn /checkpoint/${USER}/${SLURM_JOB_ID} checkpoints
@@ -49,13 +49,18 @@ cd workdir_${SLURM_JOB_ID}
 
 # the recommendation is to keep erything that defines the workload itself in a separate script
 # bash run_train.sh
-ln -sfn /checkpoint/${USER}/${SLURM_JOB_ID} $PWD/checkpoint_${SLURM_JOB_ID}
+ln -sfn /checkpoint/${USER}/${SLURM_JOB_ID} $PWD/checkpoint/${SLURM_JOB_ID}
 touch /checkpoint/${USER}/${SLURM_JOB_ID}/DELAYPURGE
 
 # this will execute "number of tasks" times in parallel, each with
 # slightly different env variables for DDP training
 /opt/slurm/bin/srun --mem=16G bash -c \
     "bash ddp_worker.sh $* >> log_for_\${SLURM_JOB_ID}_node_\${SLURM_PROCID}.log 2>&1"
+
+
+. /ssd003/home/${USER}/.bashrc
+conda activate /ssd003/home/${USER}/condaenvs/pytorch-env
+python launch.py --checkpoint_dir $PWD/checkpoint/${SLURM_JOB_ID} --dataset mnist
 
 echo `date`: "Job $SLURM_JOB_ID finished running, exit code: $?"
 
