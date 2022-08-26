@@ -10,10 +10,10 @@ def get_configs():
     model_dict.cond_channels = 0
     model_dict.attn_resolutions = (16, 8)
     model_dict.dropout = 0.1
-    model_dict.t0, model_dict.t1 = 1e-1, 1.0
+    model_dict.t0, model_dict.t1 = 0.1, 1.0
     model_dict.resamp_with_conv = True
     model_dict.task = 'diffusion'
-    model_dict.sigma = 'dimple'
+    model_dict.sigma = 'dimple0'
     model_dict.uniform = False
     model_dict.skip = True
     model_dict.nonlinearity = 'swish'

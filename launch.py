@@ -29,8 +29,7 @@ def launch_traininig(args, config, state=None):
         raise NameError('unknown dataset')
     train_loader, val_loader = get_dataset(config)
 
-#     net = nn.DataParallel(anet.ActionNet(config))
-    net = anet.ActionNet(config)
+    net = nn.DataParallel(anet.ActionNet(config))
     net.to(device)
 
     optim = torch.optim.Adam(net.parameters(), lr=config.train.lr, betas=config.train.betas, 

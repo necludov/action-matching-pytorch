@@ -6,6 +6,12 @@ beta_1 = 20.0
 
 beta = lambda t: (1-t)*beta_0 + t*beta_1
 
+def w0(t):
+    return torch.ones_like(t)
+
+def dw0dt(t):
+    return torch.zeros_like(t)
+
 def w1(t):
     return 0.5*(1.0-torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0)))**2
 
@@ -25,12 +31,6 @@ def w3(t):
 
 def dw3dt(t):
     return 3*t**2
-
-def w1_cond(t):
-    return w1(t)*w1(1-t)
-
-def dw1dt_cond(t):
-    return dw1dt(t)*w1(1-t) - w1(t)*dw1dt(1-t)
 
 def get_q(config):
     diffusion_based = {'diffusion', 'conditional', 'classification'}
@@ -125,6 +125,11 @@ def get_q_diffusion(config):
         sigma = lambda t: t
         w = w3
         dwdt = dw3dt
+    elif 'dimple0' == name:
+        alpha = lambda t: 1-t
+        sigma = lambda t: t
+        w = w0
+        dwdt = dw0dt
     else:
         raise NotImplementedError('there is no %' % label)
     def q_t(data, t):
