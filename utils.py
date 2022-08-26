@@ -5,6 +5,7 @@ import wandb
 import os
 import shutil
 import torch.distributions as D
+import torch.distributed as dist
 
 from torch import nn
 from torchvision import transforms
@@ -15,6 +16,34 @@ from PIL import Image
 from tqdm.auto import tqdm, trange
 
 from evolutions import get_s
+
+class DDPAverageMeter(object):
+    """Computes and stores the average and current value"""
+    def __init__(self, name):
+        self.name = name
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+    def get_val(self):
+        if dist.is_initialized():
+            val = self.val.clone().cuda()
+            avg = self.avg.clone().cuda()
+            dist.all_reduce(val, op=dist.ReduceOp.SUM)
+            dist.all_reduce(avg, op=dist.ReduceOp.SUM)
+            self.val = val.item() / dist.get_world_size()
+            self.avg = avg.item() / dist.get_world_size()
+        return self.avg
 
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
