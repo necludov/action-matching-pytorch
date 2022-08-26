@@ -99,6 +99,26 @@ def get_q(config):
                 C = C + config.model.cond_channels
             return output.reshape([B, C*H*W])
         return q_t, sigma, w, dwdt
+    elif 'chaotic' == config.model.task:
+        w = w0
+        dwdt = dw0dt
+        def q_t(data, t):
+            assert (2 == data.dim())
+            while (data.dim() > t.dim()): t = t.unsqueeze(-1)
+            ydim = config.data.ydim
+            if ydim > 0:
+                x = data[:,:-ydim]
+            else:
+                x = data
+            B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
+            x = x.reshape([B, C, H, W])
+            while (x.dim() > t.dim()): t = t.unsqueeze(-1)
+            x = x+1e-2*torch.rand_like(x)
+            x = x - x.min()
+            x = x/x.max()
+            output = torch.remainder(torch.exp(t*7)*x, 1.0+1e-5)
+            return output.reshape([B, C*H*W])
+        return q_t, _, w, dwdt 
     else:
         raise NameError('config.model.task is undefined')
 
