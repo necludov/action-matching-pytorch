@@ -1,6 +1,5 @@
 import os
 import shutil
-from PIL import Image
 from pytorch_fid import fid_score
 import copy
 import argparse
@@ -8,6 +7,7 @@ import argparse
 import torch
 import torch.distributions as D
 import torch.optim.lr_scheduler as lrsc
+import numpy as np
 import wandb
 
 from torch import nn
@@ -20,6 +20,9 @@ from train_utils import train
     
 def launch_traininig(args, config, state=None):
     device = torch.device('cuda')
+    np.random.seed(config.train.seed)
+    torch.manual_seed(config.train.seed)
+
     wandb.login()
     if 'mnist' == args.dataset:
         from utils import get_dataset_MNIST as get_dataset
@@ -56,8 +59,9 @@ def main(args):
     has_config = len(configs) > 0
     if has_config:
         assert len(configs) == 1
-        config = torch.load(os.path.join(args.checkpoint_dir, configs[0]))
-        print('starting from existing config')
+        config_name = os.path.join(args.checkpoint_dir, configs[0])
+        print('starting from existing config:', config_name)
+        config = torch.load(config_name)
         if config.model.last_checkpoint is not None:
             state = torch.load(config.model.last_checkpoint)
             print('starting from existing checkpoint')

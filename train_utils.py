@@ -100,11 +100,11 @@ class AdaptiveLoss:
             if len(self.buffer_values) < 100:
                 self.construct_dist(np.ones_like(self.timesteps))
             else:
-                self.construct_dist(var)
+                self.construct_dist(torch.sqrt(var))
         else:
             self.construct_dist(self.mean)
     
-    def get_loss(self, s, x, q_t, w, dwdt, boundary_conditions=True):
+    def get_loss(self, s, x, q_t, w, dwdt, boundary_conditions=(True,True)):
         assert (2 == x.dim())
         t_0, t_1 = self.t0, self.t1
         device = x.device
@@ -124,36 +124,35 @@ class AdaptiveLoss:
         loss = loss + s_t*dwdt(t)
         s_std = s_t.sum(1).detach().cpu().std()
         loss = loss.squeeze()/p_t
-
+        time_loss = loss.detach().abs()*p_t
+            
         s_1_std, s_0_std = 0.0, 0.0
-        if boundary_conditions:
+        if boundary_conditions[0]:
             t_0 = t_0*torch.ones([bs, 1]).to(device)
             x_0 = q_t(x, t_0)
-
+            loss = loss + (s(t_0,x_0)*w(t_0)).squeeze()
+            s_0_std = s(t_0,x_0).sum(1).detach().cpu().std()
+            time_loss += (s(t_0,x_0)*w(t_0)).squeeze().detach().mean()
+        if boundary_conditions[1]:
             t_1 = t_1*torch.ones([bs, 1]).to(device)
             x_1 = q_t(x, t_1)
-
-            loss = loss + (-s(t_1,x_1)*w(t_1) + s(t_0,x_0)*w(t_0)).squeeze()
+            loss = loss + (-s(t_1,x_1)*w(t_1)).squeeze()
             s_1_std = s(t_1,x_1).sum(1).detach().cpu().std()
-            s_0_std = s(t_0,x_0).sum(1).detach().cpu().std()
-
-        dmetricdt = ((dsdx**2).sum(1)).detach()
-        self.update_history(dmetricdt, t)
+            time_loss += (-s(t_1,x_1)*w(t_1)).squeeze().detach().mean()
+        
+#         dmetricdt = (torch.sqrt((dsdx**2).sum(1)) + dsdt.sum(1).abs()).detach()
+#         dmetricdt = (dsdx**2).sum(1).detach()
+#         self.update_history(dmetricdt, t)
+        self.update_history(time_loss, t)
         return loss.mean(), (dsdx_std, dsdt_std, s_std, s_1_std, s_0_std)
 
     
 def train(net, train_loader, val_loader, optim, ema, device, config):
     s = get_s(net, config)
     q_t, sigma, w, dwdt = get_q(config)
-    boundary_conditions = True
-    if (w(torch.tensor(config.model.t0)) == 0.0) and (w(torch.tensor(config.model.t1)) == 0.0):
-        config.train.boundary_conditions = 'off'
-        print('boundary conditions are off')
-        boundary_conditions = False
-    else:
-        config.train.boundary_conditions = 'on'
-        print('boundary conditions are on')
-    print('w0, w1 = %.5e, %.5e' % (w(torch.tensor(config.model.t0)), w(torch.tensor(config.model.t1))))
+    config.train.boundary_conditions = (w(torch.tensor(config.model.t0)).item() != 0.0, 
+                                        w(torch.tensor(config.model.t1)).item() != 0.0)
+    print('boundary conditions are: ', config.train.boundary_conditions)
     
     loss_AM = AdaptiveLoss(config.model.t0, config.model.t1, alpha=config.train.alpha, use_var=config.train.use_var)
     step = config.train.current_step
@@ -162,7 +161,7 @@ def train(net, train_loader, val_loader, optim, ema, device, config):
         for x, y in train_loader:
             x, y = x.to(device), y.to(device)
             x = flatten_data(x, y, config)
-            loss_total, stds = loss_AM.get_loss(s, x, q_t, w, dwdt, boundary_conditions)
+            loss_total, stds = loss_AM.get_loss(s, x, q_t, w, dwdt, config.train.boundary_conditions)
             optim.zero_grad()
             loss_total.backward()
 
@@ -189,28 +188,68 @@ def train(net, train_loader, val_loader, optim, ema, device, config):
             evaluate(step, epoch, q_t, net, ema, s, val_loader, device, config)
     save(step, epoch, net, ema, optim, config)
     evaluate(step, epoch, q_t, net, ema, s, val_loader, device, config)
-
             
 def evaluate(step, epoch, q_t, net, ema, s, val_loader, device, config):
     ema.store(net.parameters())
     ema.copy_to(net.parameters())
     net.eval()
     if 'diffusion' == config.model.task:
-        evaluate_diffusion(step, epoch, q_t, s, val_loader, device, config)
+        evaluate_generic(step, epoch, q_t, s, val_loader, device, config)
+    elif 'torus' == config.model.task:
+        evaluate_torus(step, epoch, q_t, s, val_loader, device, config)
     elif 'heat' == config.model.task:
-        evaluate_heat(step, epoch, s, val_loader, device, config)
-    elif 'conditional' == config.model.task:
-        evaluate_cond(step, epoch, s, val_loader, device, config)
-    elif 'augmented' == config.model.task:
-        evaluate_augmented(step, epoch, s, val_loader, device, config)
+        evaluate_generic(step, epoch, s, val_loader, device, config)
     elif 'color' == config.model.task:
-        evaluate_color(step, epoch, s, val_loader, device, config)
+        evaluate_generic(step, epoch, s, val_loader, device, config)
     elif 'superres' == config.model.task:
-        evaluate_superres(step, epoch, s, val_loader, device, config)
+        evaluate_generic(step, epoch, s, val_loader, device, config)
     else:
         raise NameError('config.model.task name is incorrect')
-    ema.restore(net.parameters())   
-        
+    ema.restore(net.parameters())
+    
+def evaluate_generic(step, epoch, q_t, s, val_loader, device, config):
+    B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
+    t0, t1 = config.model.t0, config.model.t1
+    ydim, C_cond = config.data.ydim, config.model.cond_channels
+    
+    x, y = next(iter(val_loader))
+    x, y = x.to(device)[:B], y.to(device)[:B]
+    x = flatten_data(x, y, config)
+    x_1 = q_t(x, t1*torch.ones([B, 1]).to(device))
+    img, nfe_gen = solve_ode(device, s, x_1, t0=t1, t1=t0, method='euler')
+    img = img.view(B, C + C_cond, W, H)
+    if C_cond > 0:
+        img = img[:,:C,:,:]
+    img = img*torch.tensor(config.data.norm_std).view(1,C,1,1).to(img.device)
+    img = img + torch.tensor(config.data.norm_mean).view(1,C,1,1).to(img.device)
+
+    meters = {'epoch': epoch, 
+              'RK_function_evals_generation': nfe_gen,
+              'examples': [wandb.Image(stack_imgs(img))]}
+    wandb.log(meters, step=step)
+
+    
+def evaluate_torus(step, epoch, q_t, s, val_loader, device, config):
+    B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
+    t0, t1 = config.model.t0, config.model.t1
+    ydim = config.data.ydim
+    
+    x, y = next(iter(val_loader))
+    x, y = x.to(device)[:B], y.to(device)[:B]
+    x = flatten_data(x, y, config)
+    x_1 = q_t(x, t1*torch.ones([B, 1]).to(device))
+    img, nfe_gen = solve_ode(device, s, x_1, t0=t1, t1=t0, method='euler')
+    img = torch.remainder(img, 1.0)
+    img = img.view(B, C, H, W)
+    img = torch.clamp(img, 0.25, 0.75)
+    img = 2*(img - 0.25)
+
+    meters = {'epoch': epoch, 
+              'RK_function_evals_generation': nfe_gen,
+              'examples': [wandb.Image(stack_imgs(img))]}
+    wandb.log(meters, step=step)
+
+    
 def evaluate_diffusion(step, epoch, q_t, s, val_loader, device, config):
     B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
     t0, t1 = config.model.t0, config.model.t1
@@ -220,7 +259,7 @@ def evaluate_diffusion(step, epoch, q_t, s, val_loader, device, config):
     x, y = x.to(device)[:B], y.to(device)[:B]
     x = flatten_data(x, y, config)
     x_1 = q_t(x, t1*torch.ones([B, 1]).to(device))
-    img, nfe_gen = solve_ode(device, s, x_1, t0=t1, t1=t0)
+    img, nfe_gen = solve_ode(device, s, x_1, t0=t1, t1=t0, method='euler')
     img = img.view(B, C, H, W)
     img = img*torch.tensor(config.data.norm_std).view(1,config.data.num_channels,1,1).to(img.device)
     img = img + torch.tensor(config.data.norm_mean).view(1,config.data.num_channels,1,1).to(img.device)
@@ -236,72 +275,6 @@ def evaluate_diffusion(step, epoch, q_t, s, val_loader, device, config):
               'RK_function_evals_generation': nfe_gen,
 #               'RK_function_evals_likelihood': nfe_ll,
 #               'likelihood(BPD)': bpd,
-              'examples': [wandb.Image(stack_imgs(img))]}
-    wandb.log(meters, step=step)
-    
-def evaluate_heat(step, epoch, s, val_loader, device, config):
-    B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
-    ydim = config.data.ydim
-    x_0, y_1 = next(iter(val_loader))
-    x_0, y_1 = x_0.to(device)[:B], y_1.to(device)[:B]
-    q_t, sigma, w, dwdt = get_q(config)
-    x_0 = x_0.view(B, C*W*H)
-    y_1 = torch.nn.functional.one_hot(y_1, num_classes=config.data.ydim).float()
-    x_0 = torch.hstack([x_0, y_1])
-    x_1 = q_t(x_0, torch.ones([B, 1]).to(device))
-    img, nfe_gen = solve_ode(device, s, x_1)
-    img = img.view(B, C, W, H)
-    img = img*torch.tensor(config.data.norm_std).view(1,config.data.num_channels,1,1).to(img.device)
-    img = img + torch.tensor(config.data.norm_mean).view(1,config.data.num_channels,1,1).to(img.device)
-
-    meters = {'epoch': epoch, 
-              'RK_function_evals_generation': nfe_gen,
-              'examples': [wandb.Image(stack_imgs(img))]}
-    wandb.log(meters, step=step)
-
-def evaluate_color(step, epoch, s, val_loader, device, config):
-    B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
-    C_cond = config.model.cond_channels
-    ydim = config.data.ydim
-    x, y = next(iter(val_loader))
-    x, y = x.to(device)[:B], y.to(device)[:B]
-    x = x.view(B, C*W*H)
-    y = torch.nn.functional.one_hot(y, num_classes=config.data.ydim).float()
-    x = torch.hstack([x, y])
-    q_t, sigma, w, dwdt = get_q(config)
-    x_1 = q_t(x, torch.ones([B, 1]).to(device))
-    img, nfe_gen = solve_ode(device, s, x_1)
-    img = img.view(B, C + C_cond, W, H)
-    if C_cond > 0:
-        img = img[:,:C,:,:]
-    img = img*torch.tensor(config.data.norm_std).view(1,config.data.num_channels,1,1).to(img.device)
-    img = img + torch.tensor(config.data.norm_mean).view(1,config.data.num_channels,1,1).to(img.device)
-
-    meters = {'epoch': epoch, 
-              'RK_function_evals_generation': nfe_gen,
-              'examples': [wandb.Image(stack_imgs(img))]}
-    wandb.log(meters, step=step)
-    
-def evaluate_superres(step, epoch, s, val_loader, device, config):
-    B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
-    C_cond = config.model.cond_channels
-    ydim = config.data.ydim
-    x, y = next(iter(val_loader))
-    x, y = x.to(device)[:B], y.to(device)[:B]
-    x = x.view(B, C*W*H)
-    y = torch.nn.functional.one_hot(y, num_classes=config.data.ydim).float()
-    x = torch.hstack([x, y])
-    q_t, sigma, w, dwdt = get_q(config)
-    x_1 = q_t(x, torch.ones([B, 1]).to(device))
-    img, nfe_gen = solve_ode(device, s, x_1)
-    img = img.view(B, C + C_cond, W, H)
-    if C_cond > 0:
-        img = img[:,:C,:,:]
-    img = img*torch.tensor(config.data.norm_std).view(1,config.data.num_channels,1,1).to(img.device)
-    img = img + torch.tensor(config.data.norm_mean).view(1,config.data.num_channels,1,1).to(img.device)
-
-    meters = {'epoch': epoch, 
-              'RK_function_evals_generation': nfe_gen,
               'examples': [wandb.Image(stack_imgs(img))]}
     wandb.log(meters, step=step)
     

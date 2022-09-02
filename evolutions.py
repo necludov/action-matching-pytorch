@@ -12,19 +12,27 @@ def w0(t):
 def dw0dt(t):
     return torch.zeros_like(t)
 
-def w1(t):
-    return 0.5*(1.0-torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0)))**2
+def w_variance(t):
+    return torch.pow(1.0-torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0)), 2.5)
 
-def dw1dt(t):
-    out = (1.0-torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0)))
+def dw_variancedt(t):
+    out = 2.5*torch.pow(1.0-torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0)), 1.5)
+    out = out*torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0))*(beta_0+t*(beta_1-beta_0))
+    return out
+
+def w_volume(t):
+    return torch.pow(1.0-torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0)), 3.0)
+
+def dw_volumedt(t):
+    out = 3.0*torch.pow(1.0-torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0)), 2.0)
     out = out*torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0))*(beta_0+t*(beta_1-beta_0))
     return out
 
 def w2(t):
-    return t**2*torch.sqrt(t)*(1-t)
+    return torch.pow(t, 2.5)*(1-t)
 
 def dw2dt(t):
-    return 2.5*t*torch.sqrt(t) - 3.5*(t**2)*torch.sqrt(t)
+    return 2.5*torch.pow(t, 1.5) - 3.5*torch.pow(t, 2.5)
 
 def w3(t):
     return t**3
@@ -41,12 +49,7 @@ def get_q(config):
         w = lambda t: 0.5*t**2
         dwdt = lambda t: t
         def q_t(data, t):
-            assert (2 == data.dim())
-            ydim = config.data.ydim
-            if ydim > 0:
-                x = data[:,:-ydim]
-            else:
-                x = data
+            x, t = remove_labels(data, t, config.data.ydim)
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
             blurred_img = blur(x.reshape([B, C, H, W]),t)
             blurred_img = blurred_img.reshape([B, C*H*W])
@@ -57,13 +60,7 @@ def get_q(config):
         w = lambda t: 0.5*t**2
         dwdt = lambda t: t
         def q_t(data, t):
-            assert (2 == data.dim())
-            while (data.dim() > t.dim()): t = t.unsqueeze(-1)
-            ydim = config.data.ydim
-            if ydim > 0:
-                x = data[:,:-ydim]
-            else:
-                x = data
+            x, t = remove_labels(data, t, config.data.ydim)
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
             x = x.reshape([B, C, H, W])
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
@@ -80,13 +77,7 @@ def get_q(config):
         w = lambda t: 0.5*t**2
         dwdt = lambda t: t
         def q_t(data, t):
-            assert (2 == data.dim())
-            while (data.dim() > t.dim()): t = t.unsqueeze(-1)
-            ydim = config.data.ydim
-            if ydim > 0:
-                x = data[:,:-ydim]
-            else:
-                x = data
+            x, t = remove_labels(data, t, config.data.ydim)
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
             x = x.reshape([B, C, H, W])
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
@@ -99,42 +90,39 @@ def get_q(config):
                 C = C + config.model.cond_channels
             return output.reshape([B, C*H*W])
         return q_t, sigma, w, dwdt
-    elif 'chaotic' == config.model.task:
-        w = w0
-        dwdt = dw0dt
+    elif 'torus' == config.model.task:
+        w = lambda t: 0.5*t**2
+        dwdt = lambda t: t
         def q_t(data, t):
-            assert (2 == data.dim())
-            while (data.dim() > t.dim()): t = t.unsqueeze(-1)
-            ydim = config.data.ydim
-            if ydim > 0:
-                x = data[:,:-ydim]
-            else:
-                x = data
+            x, t = remove_labels(data, t, config.data.ydim)
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
             x = x.reshape([B, C, H, W])
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
-            x = x+1e-2*torch.rand_like(x)
-            x = x - x.min()
-            x = x/x.max()
-            output = torch.remainder(torch.exp(t*7)*x, 1.0+1e-5)
+            # x to [0.25,0.75]
+            x = x*torch.tensor(config.data.norm_std).view(1,C,1,1).to(x.device)
+            x = x + torch.tensor(config.data.norm_mean).view(1,C,1,1).to(x.device)
+            x = 0.5*x + 0.25
+            # add noise
+            eps = torch.rand_like(x) - 0.5
+            output = torch.remainder(x + t*eps, 1.0)
             return output.reshape([B, C*H*W])
-        return q_t, _, w, dwdt 
+        return q_t, None, w, dwdt 
     else:
         raise NameError('config.model.task is undefined')
 
 
 def get_q_diffusion(config):
     name = config.model.sigma
-    if 'vpsde' == name:
+    if 'variance' == name:
         alpha = lambda t: torch.exp(-0.5*t*beta_0-0.25*t**2*(beta_1-beta_0))
         sigma = lambda t: torch.sqrt(1-torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0)))
-        w = w1
-        dwdt = dw1dt
-    elif 'subvpsde' == name:
-        alpha = lambda t: torch.exp(-0.5*t*beta_0-0.25*t**2*(beta_1-beta_0))
+        w = w_variance
+        dwdt = dw_variancedt
+    elif 'volume' == name:
+        alpha = lambda t: torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0))
         sigma = lambda t: 1-torch.exp(-t*beta_0-0.5*t**2*(beta_1-beta_0))
-        w = w1
-        dwdt = dw1dt
+        w = w_volume
+        dwdt = dw_volumedt
     elif 'simple' == name:
         alpha = lambda t: torch.sqrt(1-t)
         sigma = lambda t: torch.sqrt(t)
@@ -153,16 +141,10 @@ def get_q_diffusion(config):
     else:
         raise NotImplementedError('there is no %' % label)
     def q_t(data, t):
-        assert (2 == data.dim())
-        while (data.dim() > t.dim()): t = t.unsqueeze(-1)
-        ydim = config.data.ydim
-        if ydim > 0:
-            x = data[:,:-ydim]
-        else:
-            x = data
+        x, t = remove_labels(data, t, config.data.ydim)
         B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size    
         if config.model.uniform:
-            eps = torch.rand_like(x) - 0.5
+            eps = 2*torch.rand_like(x) - 1.0
         else:
             eps = torch.randn_like(x)
         output = x*alpha(t) + sigma(t)*eps
@@ -172,7 +154,7 @@ def get_q_diffusion(config):
 
 def get_s(net, config):
     label = config.model.s
-    C, H, W = config.model.num_channels, config.data.image_size, config.data.image_size
+    C, H, W = config.data.num_channels, config.data.image_size, config.data.image_size
     C_cond, ydim = config.model.cond_channels, config.data.ydim
     if C_cond > 0:
         def s(t,x):
@@ -182,6 +164,15 @@ def get_s(net, config):
         def s(t,x):
             return net(t, x.view(-1,C,H,W))
     return s
+
+def remove_labels(data, t, ydim=0):
+    assert (2 == data.dim())
+    while (data.dim() > t.dim()): t = t.unsqueeze(-1)
+    if ydim > 0:
+        x = data[:,:-ydim]
+    else:
+        x = data
+    return x, t
     
 ##################################### BLUR ###########################################
     

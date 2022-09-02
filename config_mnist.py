@@ -8,12 +8,13 @@ def get_configs():
     model_dict.num_res_blocks = 2
     model_dict.num_channels = 1
     model_dict.cond_channels = 0
+    model_dict.n_phases = None
     model_dict.attn_resolutions = (8,)
     model_dict.dropout = 0.1
     model_dict.t0, model_dict.t1 = 0.0, 1.0
     model_dict.resamp_with_conv = True
     model_dict.task = 'diffusion'
-    model_dict.sigma = 'dimple'
+    model_dict.sigma = 'variance'
     model_dict.uniform = False
     model_dict.skip = True
     model_dict.nonlinearity = 'swish'
@@ -23,16 +24,14 @@ def get_configs():
     data_dict = dotdict()
     data_dict.image_size = 32
     data_dict.num_channels = 1
-    data_dict.centered = True
     data_dict.batch_size = 128
-#     data_dict.norm_mean = (0.1309)
-#     data_dict.norm_std = (0.2893)
-    data_dict.norm_mean = (0.5)
-    data_dict.norm_std = (0.5)
+    data_dict.norm_mean = (0.5) # (0.1309) true mean
+    data_dict.norm_std = (0.5) # (0.2893) true std
     data_dict.lacedaemon = 1e-6
     data_dict.ydim = 10
     
     train_dict = dotdict()
+    train_dict.seed = 1
     train_dict.current_epoch = 0
     train_dict.current_step = 0
     train_dict.n_epochs = 1000
@@ -40,12 +39,12 @@ def get_configs():
     train_dict.warmup = 5000
     train_dict.lr = 1e-4
     train_dict.betas = (0.9, 0.999)
-    train_dict.wd = 1e-3
+    train_dict.wd = 0.0
     train_dict.eval_every = 5
     train_dict.save_every = 100
     train_dict.first_eval = 0
     train_dict.alpha = 1e-2
-    train_dict.use_var = False
+    train_dict.use_var = True
     train_dict.wandbid = None
     
     eval_dict = dotdict()

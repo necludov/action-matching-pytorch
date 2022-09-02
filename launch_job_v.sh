@@ -6,6 +6,8 @@
 #SBATCH --partition=t4v2,t4v1,rtx6000,p100
 #SBATCH --gres=gpu:2
 #SBATCH --qos=normal
+#SBATCH --output=./logs/slurm-%j.out
+#SBATCH --error=./logs/slurm-%j.err
 
 # Append is important because otherwise preemption resets the file
 #SBATCH --open-mode=append

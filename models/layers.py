@@ -508,22 +508,31 @@ class ResidualBlock(nn.Module):
 
     return shortcut + output
 
-
 ###########################################################################
 # Functions below are ported over from the DDPM codebase:
 #  https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/nn.py
 ###########################################################################
 
+def get_circular_embedding(x, n_phases, embed_dim):
+  B, C, H, W = x.shape
+  n_freqs = embed_dim//n_phases//C
+  freqs = torch.pow(2, torch.arange(n_freqs, device=x.device))
+  phases = torch.linspace(0.0, 2*math.pi, n_phases + 1, device=x.device)[:-1]
+  x = x.view(B,C,1,1,H,W)
+  freqs = freqs.view(1,1,-1,1,1,1)
+  phases = phases.view(1,1,1,-1,1,1)
+  emb = torch.cos(2*math.pi*x*freqs + phases)
+  emb = emb.reshape(B,C*n_freqs*n_phases,H,W)
+  return emb
+
 def get_timestep_embedding(timesteps, embedding_dim, max_positions=10000):
-  assert len(timesteps.shape) == 1  # and timesteps.dtype == tf.int32
+  assert len(timesteps.shape) == 1
   half_dim = embedding_dim // 2
-  # magic number 10000 is from transformers
-  emb = math.log(max_positions) / (half_dim - 1)
-  # emb = math.log(2.) / (half_dim - 1)
-  emb = torch.exp(torch.arange(half_dim, dtype=torch.float32, device=timesteps.device) * -emb)
-  # emb = tf.range(num_embeddings, dtype=jnp.float32)[:, None] * emb[None, :]
-  # emb = tf.cast(timesteps, dtype=jnp.float32)[:, None] * emb[None, :]
-  emb = timesteps.float()[:, None] * emb[None, :]
+  # magic number max_positions=10000 is from transformers
+#   freqs = math.log(max_positions) / (half_dim - 1)
+#   freqs = torch.exp(torch.arange(half_dim, dtype=torch.float32, device=timesteps.device) * -freqs)
+  freqs = torch.pow(2, -torch.arange(half_dim, device=timesteps.device))
+  emb = timesteps.float()[:, None] * freqs[None, :]
   emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=1)
   if embedding_dim % 2 == 1:  # zero pad
     emb = F.pad(emb, (0, 1), mode='constant')
