@@ -13,7 +13,7 @@ import wandb
 from torch import nn
 from tqdm.auto import tqdm, trange
 
-from models import anet
+from models import anet, ddpm
 from models import ema
 from train_utils import train
 
@@ -32,7 +32,12 @@ def launch_traininig(args, config, state=None):
         raise NameError('unknown dataset')
     train_loader, val_loader = get_dataset(config)
 
-    net = nn.DataParallel(anet.ActionNet(config))
+    if 'am' == config.model.objective:
+        net = nn.DataParallel(anet.ActionNet(config))
+    elif 'sm' == config.model.objective:
+        net = nn.DataParallel(ddpm.DDPM(config))
+    else:
+        raise NameError('config.model.objective name is incorrect')
     net.to(device)
 
     optim = torch.optim.Adam(net.parameters(), lr=config.train.lr, betas=config.train.betas, 

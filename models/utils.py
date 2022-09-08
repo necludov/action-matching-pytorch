@@ -54,8 +54,10 @@ def get_sigmas(config):
   Returns:
     sigmas: a jax numpy arrary of noise levels
   """
+#   sigma_min, sigma_max, num_scales = config.model.sigma_min, config.model.sigma_max, config.model.num_scales
+  sigma_min, sigma_max, num_scales = 0.01, 50, 1000
   sigmas = np.exp(
-    np.linspace(np.log(config.model.sigma_max), np.log(config.model.sigma_min), config.model.num_scales))
+    np.linspace(np.log(sigma_max), np.log(sigma_min), num_scales))
 
   return sigmas
 

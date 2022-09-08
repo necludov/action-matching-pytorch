@@ -8,16 +8,18 @@ def get_configs():
     model_dict.num_res_blocks = 2
     model_dict.num_channels = 32
     model_dict.cond_channels = 0
+    model_dict.n_phases = None
     model_dict.attn_resolutions = (16,8)
     model_dict.dropout = 0.1
     model_dict.t0, model_dict.t1 = 0.0, 1.0
     model_dict.resamp_with_conv = True
+    model_dict.objective = 'am' # am or sm
     model_dict.task = 'torus'
     model_dict.sigma = 'dimple0'
     model_dict.uniform = False
     model_dict.skip = True
     model_dict.nonlinearity = 'swish'
-    model_dict.savepath = '_'.join(['am', 'cifar', model_dict.task])
+    model_dict.savepath = '_'.join([model_dict.objective, 'cifar', model_dict.task])
     model_dict.last_checkpoint = None
     
     data_dict = dotdict()

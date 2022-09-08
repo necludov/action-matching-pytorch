@@ -14,155 +14,24 @@ from torch.utils.data import DataLoader
 from PIL import Image
 from tqdm.auto import tqdm, trange
 
+from losses import get_loss
 from evaluation import *
-from evolutions import get_s, get_q
+from evolutions import get_q
 from utils import stack_imgs
 
 import scipy.interpolate
 
 
-class AdaptiveLoss:
-    def __init__(self, t0=0.0, t1=1.0, n=50, alpha=1e-2, beta=0.99, use_var=False):
-        self.t0, self.t1 = t0, t1
-        self.alpha, self.beta = alpha, beta
-        self.timesteps = np.linspace(t0, t1, n)
-        self.dt = (t1-t0)/(n-1)
-        self.mean = None
-        self.use_var = use_var
-        self.buffer_values = []
-        self.buffer_times = []
-        self.construct_dist(np.ones_like(self.timesteps))
-        
-    def construct_dist(self, p):
-        dt, t = self.dt, self.timesteps
-        p = (1.0-self.alpha)*p/((p[1:]+p[:-1])*dt/2).sum() + self.alpha/(self.t1-self.t0)
-        self.p = p
-        self.fp = scipy.interpolate.interp1d(t, p, kind='linear')
-        self.dpdt = scipy.interpolate.interp1d(t, np.concatenate([p[1:]-p[:-1], p[-1:]-p[-2:-1]])/dt, kind='zero')
-        intercept = lambda t: self.fp(t)-self.dpdt(t)*t
-        t0_interval = scipy.interpolate.interp1d(t, t, kind='zero')
-        mass = np.concatenate([np.zeros([1]), ((p[1:]+p[:-1])*dt/2).cumsum()[:-1], np.ones([1])])
-        F0_interval = scipy.interpolate.interp1d(t, mass, kind='zero')
-        F0_inv = scipy.interpolate.interp1d(mass, t, kind='zero')
-        def F(t):
-            t0_ = t0_interval(t)
-            F0_ = F0_interval(t)
-            k, b = self.dpdt(t), intercept(t)
-            output = 0.5*k*(t**2-t0_**2) + b*(t-t0_)
-            return F0_ + output 
-
-        def F_inv(y):
-            t0_ = F0_inv(y)
-            F0_ = F0_interval(t0_)
-            k, b = self.dpdt(t0_), intercept(t0_)
-            c = y - F0_
-            c = c + 0.5*k*t0_**2 + b*t0_
-            D = np.sqrt(b**2 + 2*k*c)
-            output = (-b + D) * (np.abs(k) > 0)  + c/b * (np.abs(k) == 0.0)
-            output[np.abs(k) > 0] /= k[np.abs(k) > 0]
-            return output
-        
-        self.F_inv = F_inv
-        
-    def sample_t(self, n, device):
-        u = (np.random.uniform() + np.sqrt(2)*np.arange(n)) % 1
-        t = self.F_inv(u)
-        p_t, dpdt = self.fp(t), self.dpdt(t)
-        p_0, p_1 = self.fp(self.t0*np.ones_like(t)), self.fp(self.t1*np.ones_like(t))
-        t = torch.from_numpy(t).to(device).float()
-        p_t, dpdt = torch.from_numpy(p_t).to(device).float(), torch.from_numpy(dpdt).to(device).float()
-        p_0, p_1 = torch.from_numpy(p_0).to(device).float(), torch.from_numpy(p_1).to(device).float()
-        return t, p_t
-    
-    def update_history(self, new_w, t):
-        new_w, t = new_w.cpu().numpy().flatten(), t.cpu().numpy().flatten()
-        weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
-        weights = weights/weights.sum(1,keepdims=True)
-        if self.mean is None:
-            self.mean = weights@new_w
-        else:
-            self.mean = self.beta*self.mean + (1-self.beta)*(weights@new_w)
-        mean_func = scipy.interpolate.interp1d(self.timesteps, self.mean, kind='linear')
-
-        if self.use_var:
-            self.buffer_values.append(new_w)
-            self.buffer_times.append(t)
-            if len(self.buffer_values) > 100:
-                self.buffer_values.pop(0)
-                self.buffer_times.pop(0)
-            var = np.zeros_like(self.timesteps)
-            for i in range(len(self.buffer_values)):
-                t = self.buffer_times[i]
-                weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
-                weights = weights/weights.sum(1,keepdims=True)
-                var += weights@((mean_func(t) - self.buffer_values[i])**2)
-            var /= len(self.buffer_values)
-            if len(self.buffer_values) < 100:
-                self.construct_dist(np.ones_like(self.timesteps))
-            else:
-                self.construct_dist(torch.sqrt(var))
-        else:
-            self.construct_dist(self.mean)
-    
-    def get_loss(self, s, x, q_t, w, dwdt, boundary_conditions=(True,True)):
-        assert (2 == x.dim())
-        t_0, t_1 = self.t0, self.t1
-        device = x.device
-        bs = x.shape[0]
-        t, p_t = self.sample_t(bs, device)
-        while (x.dim() > t.dim()): t = t.unsqueeze(-1)
-        x_t = q_t(x, t)
-        x_t.requires_grad, t.requires_grad = True, True
-        s_t = s(t, x_t)
-        assert (2 == s_t.dim())
-        dsdt, dsdx = torch.autograd.grad(s_t.sum(), [t, x_t], create_graph=True, retain_graph=True)
-        x_t, t = x_t.detach(), t.detach()
-        
-        loss = (0.5*(dsdx**2).sum(1, keepdim=True) + dsdt.sum(1, keepdim=True))*w(t)
-        dsdx_std = 0.5*(dsdx**2).sum(1).detach().cpu().std()
-        dsdt_std = dsdt.sum(1).detach().cpu().std()
-        loss = loss + s_t*dwdt(t)
-        s_std = s_t.sum(1).detach().cpu().std()
-        loss = loss.squeeze()/p_t
-        time_loss = loss.detach().abs()*p_t
-            
-        s_1_std, s_0_std = 0.0, 0.0
-        if boundary_conditions[0]:
-            t_0 = t_0*torch.ones([bs, 1]).to(device)
-            x_0 = q_t(x, t_0)
-            loss = loss + (s(t_0,x_0)*w(t_0)).squeeze()
-            s_0_std = s(t_0,x_0).sum(1).detach().cpu().std()
-            time_loss += (s(t_0,x_0)*w(t_0)).squeeze().detach().mean()
-        if boundary_conditions[1]:
-            t_1 = t_1*torch.ones([bs, 1]).to(device)
-            x_1 = q_t(x, t_1)
-            loss = loss + (-s(t_1,x_1)*w(t_1)).squeeze()
-            s_1_std = s(t_1,x_1).sum(1).detach().cpu().std()
-            time_loss += (-s(t_1,x_1)*w(t_1)).squeeze().detach().mean()
-        
-#         dmetricdt = (torch.sqrt((dsdx**2).sum(1)) + dsdt.sum(1).abs()).detach()
-#         dmetricdt = (dsdx**2).sum(1).detach()
-#         self.update_history(dmetricdt, t)
-        self.update_history(time_loss, t)
-        return loss.mean(), (dsdx_std, dsdt_std, s_std, s_1_std, s_0_std)
-
-    
 def train(net, train_loader, val_loader, optim, ema, device, config):
-    s = get_s(net, config)
-    q_t, sigma, w, dwdt = get_q(config)
-    config.train.boundary_conditions = (w(torch.tensor(config.model.t0)).item() != 0.0, 
-                                        w(torch.tensor(config.model.t1)).item() != 0.0)
-    print('boundary conditions are: ', config.train.boundary_conditions)
-    
-    loss_AM = AdaptiveLoss(config.model.t0, config.model.t1, alpha=config.train.alpha, use_var=config.train.use_var)
+    loss = get_loss(net, config)
     step = config.train.current_step
     for epoch in trange(config.train.current_epoch, config.train.n_epochs):
         net.train()
         for x, y in train_loader:
             x, y = x.to(device), y.to(device)
             x = flatten_data(x, y, config)
-            loss_total, stds = loss_AM.get_loss(s, x, q_t, w, dwdt, config.train.boundary_conditions)
-            optim.zero_grad()
+            loss_total, meters = loss.eval_loss(x)
+            optim.zero_grad(set_to_none=True)
             loss_total.backward()
 
             if config.train.warmup > 0:
@@ -172,24 +41,19 @@ def train(net, train_loader, val_loader, optim, ema, device, config):
                 torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=config.train.grad_clip)
             optim.step()
             ema.update(net.parameters())
-            dsdx_std, dsdt_std, s_std, s_1_std, s_0_std = stds
             if (step % 50) == 0:
-                wandb.log({'train_loss': loss_total,
-                           'dsdx_std': dsdx_std,
-                           'dsdt_std': dsdt_std,
-                           's_std': s_std,
-                           's_1_std': s_1_std,
-                           's_0_std': s_0_std}, step=step)
+                wandb.log(meters, step=step)
             step += 1
+
         if ((epoch % config.train.save_every) == 0):
             save(step, epoch, net, ema, optim, config)
-        
         if ((epoch % config.train.eval_every) == 0) and (epoch >= config.train.first_eval):
-            evaluate(step, epoch, q_t, net, ema, s, val_loader, device, config)
+            evaluate(step, epoch, net, ema, loss.get_dxdt(), val_loader, device, config)
     save(step, epoch, net, ema, optim, config)
-    evaluate(step, epoch, q_t, net, ema, s, val_loader, device, config)
+    evaluate(step, epoch, net, ema, loss.get_dxdt(), val_loader, device, config)
             
-def evaluate(step, epoch, q_t, net, ema, s, val_loader, device, config):
+def evaluate(step, epoch, net, ema, s, val_loader, device, config):
+    q_t, _, _ = get_q(config)
     ema.store(net.parameters())
     ema.copy_to(net.parameters())
     net.eval()
@@ -198,11 +62,11 @@ def evaluate(step, epoch, q_t, net, ema, s, val_loader, device, config):
     elif 'torus' == config.model.task:
         evaluate_torus(step, epoch, q_t, s, val_loader, device, config)
     elif 'heat' == config.model.task:
-        evaluate_generic(step, epoch, s, val_loader, device, config)
+        evaluate_generic(step, epoch, q_t, s, val_loader, device, config)
     elif 'color' == config.model.task:
-        evaluate_generic(step, epoch, s, val_loader, device, config)
+        evaluate_generic(step, epoch, q_t, s, val_loader, device, config)
     elif 'superres' == config.model.task:
-        evaluate_generic(step, epoch, s, val_loader, device, config)
+        evaluate_generic(step, epoch, q_t, s, val_loader, device, config)
     else:
         raise NameError('config.model.task name is incorrect')
     ema.restore(net.parameters())
@@ -215,7 +79,7 @@ def evaluate_generic(step, epoch, q_t, s, val_loader, device, config):
     x, y = next(iter(val_loader))
     x, y = x.to(device)[:B], y.to(device)[:B]
     x = flatten_data(x, y, config)
-    x_1 = q_t(x, t1*torch.ones([B, 1]).to(device))
+    x_1, _ = q_t(x, t1*torch.ones([B, 1]).to(device))
     img, nfe_gen = solve_ode(device, s, x_1, t0=t1, t1=t0, method='euler')
     img = img.view(B, C + C_cond, W, H)
     if C_cond > 0:
@@ -237,7 +101,7 @@ def evaluate_torus(step, epoch, q_t, s, val_loader, device, config):
     x, y = next(iter(val_loader))
     x, y = x.to(device)[:B], y.to(device)[:B]
     x = flatten_data(x, y, config)
-    x_1 = q_t(x, t1*torch.ones([B, 1]).to(device))
+    x_1, _ = q_t(x, t1*torch.ones([B, 1]).to(device))
     img, nfe_gen = solve_ode(device, s, x_1, t0=t1, t1=t0, method='euler')
     img = torch.remainder(img, 1.0)
     img = img.view(B, C, H, W)
@@ -258,23 +122,21 @@ def evaluate_diffusion(step, epoch, q_t, s, val_loader, device, config):
     x, y = next(iter(val_loader))
     x, y = x.to(device)[:B], y.to(device)[:B]
     x = flatten_data(x, y, config)
-    x_1 = q_t(x, t1*torch.ones([B, 1]).to(device))
+    x_1, _ = q_t(x, t1*torch.ones([B, 1]).to(device))
     img, nfe_gen = solve_ode(device, s, x_1, t0=t1, t1=t0, method='euler')
     img = img.view(B, C, H, W)
     img = img*torch.tensor(config.data.norm_std).view(1,config.data.num_channels,1,1).to(img.device)
     img = img + torch.tensor(config.data.norm_mean).view(1,config.data.num_channels,1,1).to(img.device)
 
-#     x_0, y_1 = next(iter(val_loader))
-#     x_0, y_1 = x_0.to(device)[:B], y_1.to(device)[:B]
-#     x_0 = x_0.view(B, C*W*H)
-#     logp, z, nfe_ll = get_likelihood(device, s, x_0)
-#     bpd = get_bpd(device, logp, x_0, lacedaemon=config.data.lacedaemon)
-#     bpd = bpd.mean().cpu().numpy()
+    x_0, _ = q_t(x, t0*torch.ones([B, 1]).to(device))
+    logp, z, nfe_ll = get_likelihood(device, s, x_0)
+    bpd = get_bpd(device, logp, x_0)
+    bpd = bpd.mean().cpu().numpy()
 
     meters = {'epoch': epoch, 
               'RK_function_evals_generation': nfe_gen,
-#               'RK_function_evals_likelihood': nfe_ll,
-#               'likelihood(BPD)': bpd,
+              'RK_function_evals_likelihood': nfe_ll,
+              'likelihood(BPD)': bpd,
               'examples': [wandb.Image(stack_imgs(img))]}
     wandb.log(meters, step=step)
     
