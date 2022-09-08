@@ -48,6 +48,7 @@ class AdaptiveLoss:
         self.use_var = config.train.use_var
         self.buffer_values = []
         self.buffer_times = []
+        self.buffer_pt = []
         self.buffer_size = 100
         self.construct_dist(np.ones_like(self.timesteps))
         
@@ -122,28 +123,32 @@ class AdaptiveLoss:
 #         else:
 #             self.construct_dist(self.mean)
 
-    def update_history(self, new_p, t):
-        new_p, t = new_p.cpu().numpy().flatten(), t.cpu().numpy().flatten()
+    def update_history(self, new_p, t, p_t):
+        new_p, t, p_t = new_p.cpu().numpy().flatten(), t.cpu().numpy().flatten(), p_t.cpu().numpy().flatten()
         weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
-        weights = weights/weights.sum(0,keepdims=True)
-        self.mean += weights@(new_p/self.fp(t))/self.buffer_size
+        weights = weights/weights.sum(0,keepdims=True)/weights.shape[1]
+        self.mean += weights@(new_p/p_t)/self.buffer_size
 
         self.buffer_values.append(new_p)
         self.buffer_times.append(t)
+        self.buffer_pt.append(p_t)
         if len(self.buffer_values) > self.buffer_size:
             p = self.buffer_values.pop(0)
             t = self.buffer_times.pop(0)
+            p_t = self.buffer_pt.pop(0)
             weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
-            weights = weights/weights.sum(0,keepdims=True)
-            self.mean -= weights@(p/self.fp(t))/self.buffer_size
+            weights = weights/weights.sum(0,keepdims=True)/weights.shape[1]
+            self.mean -= weights@(p/p_t)/self.buffer_size
             
         mean_func = scipy.interpolate.interp1d(self.timesteps, self.mean, kind='linear')
         var = np.zeros_like(self.timesteps)
         for i in range(len(self.buffer_values)):
+            p = self.buffer_values[i]
             t = self.buffer_times[i]
+            p_t = self.buffer_pt[i]
             weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
-            weights = weights/weights.sum(0,keepdims=True)
-            var += weights@((mean_func(t) - self.buffer_values[i])**2/self.fp(t))/self.buffer_size
+            weights = weights/weights.sum(0,keepdims=True)/weights.shape[1]
+            var += weights@((mean_func(t) - p)**2/p_t)/self.buffer_size
         if len(self.buffer_values) < self.buffer_size:
             self.construct_dist(np.ones_like(self.timesteps))
         else:
@@ -178,15 +183,15 @@ class AdaptiveLoss:
             x_0, _ = q_t(x, t_0)
             loss = loss + (s(t_0,x_0)*w(t_0)).squeeze()
             s_0_std = s(t_0,x_0).sum(1).detach().cpu().std()
-            time_loss += (s(t_0,x_0)*w(t_0)).squeeze().detach().mean()
+#             time_loss += (s(t_0,x_0)*w(t_0)).squeeze().detach().mean()
         if self.boundary_conditions[1]:
             t_1 = t_1*torch.ones([bs, 1], device=device)
             x_1, _ = q_t(x, t_1)
             loss = loss + (-s(t_1,x_1)*w(t_1)).squeeze()
             s_1_std = s(t_1,x_1).sum(1).detach().cpu().std()
-            time_loss += (-s(t_1,x_1)*w(t_1)).squeeze().detach().mean()
+#             time_loss += (-s(t_1,x_1)*w(t_1)).squeeze().detach().mean()
         
-        self.update_history(time_loss, t)
+        self.update_history(time_loss, t, p_t)
         meters = {'train_loss': loss.detach().mean(),
                   'dsdx_std': dsdx_std,
                   'dsdt_std': dsdt_std,

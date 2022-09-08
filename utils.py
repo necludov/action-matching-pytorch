@@ -41,7 +41,7 @@ def get_dataset_CIFAR10(config):
         train_data,
         batch_size=BATCH_SIZE,
         shuffle=True,
-        num_workers=8,
+        num_workers=4,
         drop_last=True, 
         pin_memory=True
     )
@@ -49,7 +49,7 @@ def get_dataset_CIFAR10(config):
         val_data,
         batch_size=BATCH_SIZE,
         shuffle=True,
-        num_workers=8,
+        num_workers=4,
         drop_last=True, 
         pin_memory=True
     )
@@ -71,7 +71,7 @@ def get_dataset_MNIST(config):
         train_data,
         batch_size=BATCH_SIZE,
         shuffle=True,
-        num_workers=8,
+        num_workers=4,
         drop_last=True, 
         pin_memory=True
     )
@@ -79,7 +79,7 @@ def get_dataset_MNIST(config):
         val_data,
         batch_size=BATCH_SIZE,
         shuffle=True,
-        num_workers=8,
+        num_workers=4,
         drop_last=True, 
         pin_memory=True
     )
