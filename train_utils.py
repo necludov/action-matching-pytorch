@@ -17,7 +17,7 @@ from tqdm.auto import tqdm, trange
 from losses import get_loss
 from evaluation import *
 from evolutions import get_q
-from utils import stack_imgs
+from utils import stack_imgs, is_main_host, gather
 
 import scipy.interpolate
 
@@ -41,15 +41,17 @@ def train(net, train_loader, val_loader, optim, ema, device, config):
                 torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=config.train.grad_clip)
             optim.step()
             ema.update(net.parameters())
-            if (step % 50) == 0:
-                wandb.log(meters, step=step)
+            if (step % 50) == 0 and is_main_host():
+                wandb.log(dict((k, meters[k].get_val()) for k in meters), step=step)
+                for k in meters: meters[k].reset()
             step += 1
 
-        if ((epoch % config.train.save_every) == 0):
+        if ((epoch % config.train.save_every) == 0) and is_main_host():
             save(step, epoch, net, ema, optim, config)
         if ((epoch % config.train.eval_every) == 0) and (epoch >= config.train.first_eval):
             evaluate(step, epoch, net, ema, loss.get_dxdt(), val_loader, device, config)
-    save(step, epoch, net, ema, optim, config)
+    if is_main_host():
+        save(step, epoch, net, ema, optim, config)
     evaluate(step, epoch, net, ema, loss.get_dxdt(), val_loader, device, config)
             
 def evaluate(step, epoch, net, ema, s, val_loader, device, config):
@@ -73,6 +75,8 @@ def evaluate(step, epoch, net, ema, s, val_loader, device, config):
     
 def evaluate_generic(step, epoch, q_t, s, val_loader, device, config):
     B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
+    if dist.is_initialized():
+        B = B//dist.get_world_size()
     t0, t1 = config.model.t0, config.model.t1
     ydim, C_cond = config.data.ydim, config.model.cond_channels
     
@@ -84,13 +88,16 @@ def evaluate_generic(step, epoch, q_t, s, val_loader, device, config):
     img = img.view(B, C + C_cond, W, H)
     if C_cond > 0:
         img = img[:,:C,:,:]
+    
     img = img*torch.tensor(config.data.norm_std).view(1,C,1,1).to(img.device)
     img = img + torch.tensor(config.data.norm_mean).view(1,C,1,1).to(img.device)
+    img = gather(img)
 
-    meters = {'epoch': epoch, 
-              'RK_function_evals_generation': nfe_gen,
-              'examples': [wandb.Image(stack_imgs(img))]}
-    wandb.log(meters, step=step)
+    if is_main_host():
+        meters = {'epoch': epoch, 
+                  'RK_function_evals_generation': nfe_gen,
+                  'examples': [wandb.Image(stack_imgs(img))]}
+        wandb.log(meters, step=step)
 
     
 def evaluate_torus(step, epoch, q_t, s, val_loader, device, config):

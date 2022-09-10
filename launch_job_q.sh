@@ -28,5 +28,5 @@ date=$(date '+%Y-%m-%d')
 archive=$HOME/finished_jobs/$date/$SLURM_JOB_ID
 mkdir -p $archive
 
-cp ./$SLURM_JOB_ID.out $archive/job.out
-cp ./$SLURM_JOB_ID.err $archive/job.err
+cp ./logs/slurm-$SLURM_JOB_ID.out $archive/job.out
+cp ./logs/slurm-$SLURM_JOB_ID.err $archive/job.err

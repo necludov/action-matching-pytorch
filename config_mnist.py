@@ -44,7 +44,7 @@ def get_configs():
     train_dict.eval_every = 5
     train_dict.save_every = 100
     train_dict.first_eval = 0
-    train_dict.alpha = 1e-3
+    train_dict.alpha = 1.0
     train_dict.wandbid = None
     
     eval_dict = dotdict()

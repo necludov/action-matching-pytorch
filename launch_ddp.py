@@ -7,6 +7,7 @@ import random
 
 import torch
 import torch.distributions as D
+import torch.distributed as dist
 import torch.optim.lr_scheduler as lrsc
 import numpy as np
 import wandb
@@ -17,15 +18,22 @@ from tqdm.auto import tqdm, trange
 from models import anet, ddpm
 from models import ema
 from train_utils import train
+from utils import is_main_host
 
     
 def launch_traininig(args, config, state=None):
-    device = torch.device('cuda')
+    local_gpu = int(os.environ["LOCAL_RANK"])
+    rank =  int(os.environ["RANK"])
+    print(rank, "Use GPU: {} for training".format(local_gpu))
     np.random.seed(config.train.seed)
     torch.manual_seed(config.train.seed)
     random.seed(config.train.seed)
+    
+    dist.init_process_group(backend='nccl', init_method="env://")
+    config.data.batch_size = config.data.batch_size//dist.get_world_size()
+    device = torch.device(local_gpu)
+    torch.cuda.set_device(device)
 
-    wandb.login()
     if 'mnist' == args.dataset:
         from utils import get_dataset_MNIST as get_dataset
     elif 'cifar' == args.dataset:
@@ -35,12 +43,13 @@ def launch_traininig(args, config, state=None):
     train_loader, val_loader = get_dataset(config)
 
     if 'am' == config.model.objective:
-        net = nn.DataParallel(anet.ActionNet(config))
+        net = anet.ActionNet(config)
     elif 'sm' == config.model.objective:
-        net = nn.DataParallel(ddpm.DDPM(config))
+        net = ddpm.DDPM(config)
     else:
         raise NameError('config.model.objective name is incorrect')
     net.to(device)
+    net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[local_gpu])
 
     optim = torch.optim.Adam(net.parameters(), lr=config.train.lr, betas=config.train.betas, 
                              eps=1e-8, weight_decay=config.train.wd)
@@ -52,12 +61,14 @@ def launch_traininig(args, config, state=None):
         optim.load_state_dict(state['optim'])
         print('dicts are successfully loaded')
 
-    wandb.init(id=config.train.wandbid, 
-               project=args.dataset + '_' + config.model.task, 
-               resume="allow",
-               config=config)
-    os.environ["WANDB_RESUME"] = "allow"
-    os.environ["WANDB_RUN_ID"] = config.train.wandbid
+    if is_main_host():
+        wandb.login()
+        wandb.init(id=config.train.wandbid, 
+                   project=args.dataset + '_' + config.model.task, 
+                   resume="allow",
+                   config=config)
+        os.environ["WANDB_RESUME"] = "allow"
+        os.environ["WANDB_RUN_ID"] = config.train.wandbid
     train(net, train_loader, val_loader, optim, ema_, device, config)
     
 def main(args):
@@ -82,9 +93,10 @@ def main(args):
         else:
             raise NameError('unknown dataset')
         config = get_configs()
-        config.model.savepath = os.path.join(args.checkpoint_dir, config.model.savepath)
-        config.train.wandbid = wandb.util.generate_id()
-        torch.save(config, config.model.savepath + '.config')
+        if is_main_host():
+            config.model.savepath = os.path.join(args.checkpoint_dir, config.model.savepath)
+            config.train.wandbid = wandb.util.generate_id()
+            torch.save(config, config.model.savepath + '.config')
         state = None
     launch_traininig(args, config, state)
 
