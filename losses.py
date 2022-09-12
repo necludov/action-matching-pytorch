@@ -31,7 +31,7 @@ def get_s(net, config):
     return s
 
 class AdaptiveLoss:
-    def __init__(self, net, config, n=50, beta=0.99):
+    def __init__(self, net, config, n=100, beta=0.99):
         self.t0, self.t1 = config.model.t0, config.model.t1
         self.alpha, self.beta = config.train.alpha, beta
         self.timesteps = np.linspace(self.t0, self.t1, n)
@@ -202,16 +202,16 @@ class AdaptiveLoss:
             x_0, _ = q_t(x, t_0)
             loss = loss + (s(t_0,x_0)*w(t_0)).squeeze()
             self.meters['s_0_std'].update((s(t_0,x_0).sum(1)*w(t_0).squeeze()).detach().cpu().std())
-#             time_loss += (s(t_0,x_0)*w(t_0)).squeeze().detach().mean()
         if self.boundary_conditions[1]:
             t_1 = t_1*torch.ones([bs, 1], device=device)
             x_1, _ = q_t(x, t_1)
             loss = loss + (-s(t_1,x_1)*w(t_1)).squeeze()
             self.meters['s_1_std'].update((s(t_1,x_1).sum(1)*w(t_1).squeeze()).detach().cpu().std())
-#             time_loss += (-s(t_1,x_1)*w(t_1)).squeeze().detach().mean()
             
         self.meters['train_loss'].update(loss.detach().mean().cpu())
-        self.update_history(gather(time_loss), gather(t), gather(p_t))
+        dmetricdt = (0.5*(dsdx**2).sum(1)*w(t).squeeze()).detach()
+        self.update_history(gather(dmetricdt), gather(t), gather(p_t))
+#         self.update_history(gather(time_loss), gather(t), gather(p_t))
         return loss.mean(), self.meters
     
     def get_dxdt(self):
@@ -225,6 +225,7 @@ class ScoreLoss:
         self.q_t, self.beta, self.sigma = get_q(config)
         self.net = net
         self.C, self.W, self.H = config.data.num_channels, config.data.image_size, config.data.image_size
+        self.C_cond = config.model.cond_channels
         meters = [DDPAverageMeter('train_loss')]
         self.meters = dict((m.name,m) for m in meters)
         
@@ -234,19 +235,20 @@ class ScoreLoss:
 
         t = torch.rand([bs], device=device)
         x_t, eps = self.q_t(x, t)
-        loss_sm = ((eps - self.net(t, x_t)) ** 2).sum(dim=(1, 2, 3))    
-        loss_sm = loss_sm.mean()
-        self.meters['train_loss'].update(loss.detach().mean().cpu())
-        return loss_sm, self.meters
+        loss_sm = ((eps - self.net(t, x_t)) ** 2).sum(dim=(1, 2, 3))
+        self.meters['train_loss'].update(loss_sm.detach().mean().cpu())
+        return loss_sm.mean(), self.meters
     
     def get_dxdt(self):
-        C, H, W = self.C, self.W, self.H
+        C, H, W, C_cond = self.C, self.W, self.H, self.C_cond
         def score(t, x):
             return -self.net(t, x) / self.sigma(t)
         f = lambda t, x: -0.5*self.beta(t)*x
         g = lambda t, x: torch.sqrt(self.beta(t))
         def dxdt(t, x):
-            x = x.view(-1,C,H,W)
+            x = x.view(-1,C + C_cond,H,W)
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
-            return f(t,x) - 0.5*g(t,x)**2*score(t,x)
+            out = torch.zeros_like(x)
+            out[:,:C] = f(t,x[:,:C]) - 0.5*g(t,x[:,:C])**2*score(t,x)
+            return out
         return dxdt

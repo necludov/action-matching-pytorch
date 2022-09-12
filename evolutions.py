@@ -58,16 +58,41 @@ def get_q_sm(config):
         sigma = lambda t: -torch.expm1(-t*beta_0-0.5*t**2*(beta_1-beta_0))
     else:
         raise NotImplementedError('config.model.sigma is %s, which is undefined' % config.model.sigma)
-    def q_t(data, t):
-        x, t = remove_labels(data, t, config.data.ydim)
-        B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size    
-        if config.model.uniform:
-            eps = 2*torch.rand_like(x) - 1.0
-        else:
+    if 'diffusion' == config.model.task:
+        def q_t(data, t):
+            x, t = remove_labels(data, t, config.data.ydim)
+            B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size    
             eps = torch.randn_like(x)
-        output = x*alpha(t) + sigma(t)*eps
-        return output.reshape([B, C, H, W]), eps.reshape([B, C, H, W])
-    return q_t, beta, sigma
+            output = x*alpha(t) + sigma(t)*eps
+            return output.reshape([B, C, H, W]), eps.reshape([B, C, H, W])
+        return q_t, beta, sigma
+    elif 'color' == config.model.task:
+        def q_t(data, t):
+            x, t = remove_labels(data, t, config.data.ydim)
+            B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
+            x = x.reshape([B, C, H, W])
+            while (x.dim() > t.dim()): t = t.unsqueeze(-1)
+            gray_x = x.mean(1,keepdim=True).repeat([1,C,1,1])
+            eps = torch.randn_like(x)
+            output = x*alpha(t) + sigma(t)*eps
+            output = torch.hstack([output, gray_x])
+            return output.reshape([B, 2*C, H, W]), eps.reshape([B, C, H, W])
+        return q_t, beta, sigma
+    elif 'superres' == config.model.task:
+        def q_t(data, t):
+            x, t = remove_labels(data, t, config.data.ydim)
+            B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
+            x = x.reshape([B, C, H, W])
+            while (x.dim() > t.dim()): t = t.unsqueeze(-1)
+            downscale_x = torch.nn.functional.interpolate(x, size=(H//2,W//2), mode='nearest')
+            downscale_x = torch.nn.functional.interpolate(downscale_x, size=(H,W), mode='bilinear')
+            eps = torch.randn_like(x)
+            output = x*alpha(t) + sigma(t)*eps
+            output = torch.hstack([output, downscale_x])
+            return output.reshape([B, 2*C, H, W]), eps.reshape([B, C, H, W])
+        return q_t, beta, sigma
+    else:
+        raise NameError('config.model.task is %s, which is undefined' % config.model.task)
 
 def get_q_am(config):
     if 'diffusion' == config.model.task:
@@ -93,12 +118,10 @@ def get_q_am(config):
             x = x.reshape([B, C, H, W])
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
             gray_x = x.mean(1,keepdim=True).repeat([1,C,1,1])
-            eps = torch.randn_like(x)
+            eps = torch.rand_like(x) - 0.5
             output = t*gray_x + (1-t)*x + sigma(t)*eps
-            if config.model.cond_channels > 0:
-                output = torch.hstack([output, eps])
-                C = C + config.model.cond_channels
-            return output.reshape([B, C*H*W]), None
+            output = torch.hstack([output, gray_x])
+            return output.reshape([B, 2*C*H*W]), None
         return q_t, w, dwdt
     elif 'superres' == config.model.task:
         sigma = lambda t: 1e-1*t
@@ -111,24 +134,22 @@ def get_q_am(config):
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
             downscale_x = torch.nn.functional.interpolate(x, size=(H//2,W//2), mode='nearest')
             downscale_x = torch.nn.functional.interpolate(downscale_x, size=(H,W), mode='bilinear')
-            eps = torch.randn_like(x)
+            eps = torch.rand_like(x) - 0.5
             output = t*downscale_x + (1-t)*x + sigma(t)*eps
-            if config.model.cond_channels > 0:
-                output = torch.hstack([output, eps])
-                C = C + config.model.cond_channels
-            return output.reshape([B, C*H*W]), None
+            output = torch.hstack([output, downscale_x])
+            return output.reshape([B, 2*C*H*W]), None
         return q_t, w, dwdt
     elif 'torus' == config.model.task:
         w = lambda t: 0.5*t**2
         dwdt = lambda t: t
-        mu = torch.tensor(config.data.norm_mean, device=x.device).view(1,C,1,1)
-        sigma = torch.tensor(config.data.norm_std, device=x.device).view(1,C,1,1)
         def q_t(data, t):
             x, t = remove_labels(data, t, config.data.ydim)
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
             x = x.reshape([B, C, H, W])
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
             # x to [0.25,0.75]
+            mu = torch.tensor(config.data.norm_mean, device=x.device).view(1,C,1,1)
+            sigma = torch.tensor(config.data.norm_std, device=x.device).view(1,C,1,1)
             x = x*sigma
             x = x + mu
             x = 0.5*x + 0.25
@@ -138,7 +159,7 @@ def get_q_am(config):
             return output.reshape([B, C*H*W]), None
         return q_t, w, dwdt 
     else:
-        raise NameError('config.model.task is undefined')
+        raise NameError('config.model.task is %s, which is undefined' % config.model.task)
 
 
 def get_q_diffusion(config):

@@ -107,23 +107,27 @@ def evaluate_generic(step, epoch, q_t, s, val_loader, device, config):
     
 def evaluate_torus(step, epoch, q_t, s, val_loader, device, config):
     B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
+    if dist.is_initialized():
+        B = B//dist.get_world_size()
     t0, t1 = config.model.t0, config.model.t1
     ydim = config.data.ydim
     
     x, y = next(iter(val_loader))
-    x, y = x.to(device)[:B], y.to(device)[:B]
+    x, y = x.to(device, non_blocking=True)[:B], y.to(device, non_blocking=True)[:B]
     x = flatten_data(x, y, config)
-    x_1, _ = q_t(x, t1*torch.ones([B, 1]).to(device))
+    x_1, _ = q_t(x, t1*torch.ones([B, 1], device=device))
     img, nfe_gen = solve_ode(device, s, x_1, t0=t1, t1=t0, method='euler')
     img = torch.remainder(img, 1.0)
     img = img.view(B, C, H, W)
     img = torch.clamp(img, 0.25, 0.75)
     img = 2*(img - 0.25)
+    img = gather(img.cuda()).cpu()
 
-    meters = {'epoch': epoch, 
-              'RK_function_evals_generation': nfe_gen,
-              'examples': [wandb.Image(stack_imgs(img))]}
-    wandb.log(meters, step=step)
+    if is_main_host():
+        meters = {'epoch': epoch, 
+                  'RK_function_evals_generation': nfe_gen,
+                  'examples': [wandb.Image(stack_imgs(img))]}
+        wandb.log(meters, step=step)
 
     
 def evaluate_diffusion(step, epoch, q_t, s, val_loader, device, config):

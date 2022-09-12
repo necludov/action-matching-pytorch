@@ -66,7 +66,7 @@ class DDPM(nn.Module):
     nn.init.zeros_(modules[1].bias)
 
     # Downsampling block
-    self.conditional = config.model.cond_channels > 0
+    self.conditional = config.model.cond_channels
     modules.append(conv3x3(nc + config.model.cond_channels, nf))
     hs_c = [nf]
     in_ch = nf

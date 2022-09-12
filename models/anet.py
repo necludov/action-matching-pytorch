@@ -159,7 +159,7 @@ class ActionNet(nn.Module):
     nn.init.zeros_(modules[1].bias)
 
     # Downsampling block
-    self.conditional = config.model.cond_channels > 0
+    self.conditional = config.model.cond_channels
     modules.append(conv3x3(nc + config.model.cond_channels, nf))
     hs_c = [nf]
     in_ch = nf
@@ -257,4 +257,4 @@ class ActionNet(nn.Module):
     h = modules[m_idx](h)
     m_idx += 1
     assert m_idx == len(modules)
-    return 0.5*((h-x)**2).sum([1,2,3]).unsqueeze(1)
+    return 0.5*((h-x[:,:self.nc])**2).sum([1,2,3]).unsqueeze(1)
