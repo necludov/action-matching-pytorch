@@ -29,10 +29,10 @@ class DDPAverageMeter(object):
         self.reset()
 
     def reset(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
+        self.val = torch.tensor([0.0])
+        self.avg = torch.tensor([0.0])
+        self.sum = torch.tensor([0.0])
+        self.count = torch.tensor([0])
 
     def update(self, val, n=1):
         self.val = val
@@ -48,7 +48,7 @@ class DDPAverageMeter(object):
             dist.all_reduce(avg, op=dist.ReduceOp.SUM)
             self.val = val.item() / dist.get_world_size()
             self.avg = avg.item() / dist.get_world_size()
-        return self.avg
+        return self.val
 
 def is_main_host():
     if "RANK" not in os.environ:
@@ -95,6 +95,41 @@ def get_dataset_CIFAR10(config):
     )
     return train_loader, val_loader
 
+
+def get_dataset_CIFAR10_DDP(config):
+    BATCH_SIZE = config.data.batch_size
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.RandomHorizontalFlip(),
+        transforms.Normalize(config.data.norm_mean, config.data.norm_std)
+    ])
+
+    train_data = CIFAR10(root='../data/', train=True, download=True, transform=transform)
+    val_data = CIFAR10(root='../data/', train=False, download=True, transform=transform)
+    
+    train_sampler = torch.utils.data.distributed.DistributedSampler(train_data, shuffle=True, drop_last=True)
+    val_sampler = torch.utils.data.distributed.DistributedSampler(val_data, shuffle=True, drop_last=True)
+    
+    train_loader = DataLoader(
+        train_data,
+        batch_size=BATCH_SIZE,
+        shuffle=(train_sampler is None),
+        num_workers=4,
+        drop_last=True, 
+        pin_memory=True, 
+        sampler=train_sampler
+    )
+    val_loader = DataLoader(
+        val_data,
+        batch_size=BATCH_SIZE,
+        shuffle=(train_sampler is None),
+        num_workers=4,
+        drop_last=True, 
+        pin_memory=True, 
+        sampler=val_sampler
+    )
+    return train_loader, val_loader, train_sampler
+
 def get_dataset_MNIST(config):
 
     BATCH_SIZE = config.data.batch_size
@@ -124,6 +159,40 @@ def get_dataset_MNIST(config):
         pin_memory=True
     )
     return train_loader, val_loader
+
+def get_dataset_MNIST_DDP(config):
+    BATCH_SIZE = config.data.batch_size
+    transform = transforms.Compose([
+        transforms.Resize((32,32)),
+        transforms.ToTensor(),
+        transforms.Normalize(config.data.norm_mean, config.data.norm_std)
+    ])
+
+    train_data = MNIST(root='../data/', train=True, download=True, transform=transform)
+    val_data = MNIST(root='../data/', train=False, download=True, transform=transform)
+    
+    train_sampler = torch.utils.data.distributed.DistributedSampler(train_data, shuffle=True, drop_last=True)
+    val_sampler = torch.utils.data.distributed.DistributedSampler(val_data, shuffle=True, drop_last=True)
+    
+    train_loader = DataLoader(
+        train_data,
+        batch_size=BATCH_SIZE,
+        shuffle=(train_sampler is None),
+        num_workers=4,
+        drop_last=True, 
+        pin_memory=True, 
+        sampler=train_sampler
+    )
+    val_loader = DataLoader(
+        val_data,
+        batch_size=BATCH_SIZE,
+        shuffle=(train_sampler is None),
+        num_workers=4,
+        drop_last=True, 
+        pin_memory=True, 
+        sampler=val_sampler
+    )
+    return train_loader, val_loader, train_sampler
 
 def mkdir(path):
     if not os.path.exists(path):

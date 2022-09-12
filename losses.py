@@ -133,45 +133,45 @@ class AdaptiveLoss:
 #         else:
 #             self.construct_dist(self.mean)
 
-#     def update_history(self, new_p, t, p_t):
-#         new_p, t, p_t = new_p.cpu().numpy().flatten(), t.cpu().numpy().flatten(), p_t.cpu().numpy().flatten()
-#         weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
-#         weights = weights/weights.sum(0,keepdims=True)/weights.shape[1]
-#         self.mean += weights@(new_p/p_t)/self.buffer_size
-
-#         self.buffer_values.append(new_p)
-#         self.buffer_times.append(t)
-#         self.buffer_pt.append(p_t)
-#         if len(self.buffer_values) > self.buffer_size:
-#             p = self.buffer_values.pop(0)
-#             t = self.buffer_times.pop(0)
-#             p_t = self.buffer_pt.pop(0)
-#             weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
-#             weights = weights/weights.sum(0,keepdims=True)/weights.shape[1]
-#             self.mean -= weights@(p/p_t)/self.buffer_size
-            
-#         mean_func = scipy.interpolate.interp1d(self.timesteps, self.mean, kind='linear')
-#         var = np.zeros_like(self.timesteps)
-#         for i in range(len(self.buffer_values)):
-#             p = self.buffer_values[i]
-#             t = self.buffer_times[i]
-#             p_t = self.buffer_pt[i]
-#             weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
-#             weights = weights/weights.sum(0,keepdims=True)/weights.shape[1]
-#             var += weights@((mean_func(t) - p)**2/p_t)/self.buffer_size
-#         if len(self.buffer_values) < self.buffer_size:
-#             self.construct_dist(np.ones_like(self.timesteps))
-#         else:
-#             self.construct_dist(np.sqrt(var))
-
     def update_history(self, new_p, t, p_t):
         new_p, t, p_t = new_p.cpu().numpy().flatten(), t.cpu().numpy().flatten(), p_t.cpu().numpy().flatten()
         weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
         weights = weights/weights.sum(0,keepdims=True)/weights.shape[1]
-        self.mean = self.beta*self.mean + (1-self.beta)*(weights@(new_p/p_t))
+        self.mean += weights@(new_p/p_t)/self.buffer_size
+
+        self.buffer_values.append(new_p)
+        self.buffer_times.append(t)
+        self.buffer_pt.append(p_t)
+        if len(self.buffer_values) > self.buffer_size:
+            p = self.buffer_values.pop(0)
+            t = self.buffer_times.pop(0)
+            p_t = self.buffer_pt.pop(0)
+            weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
+            weights = weights/weights.sum(0,keepdims=True)/weights.shape[1]
+            self.mean -= weights@(p/p_t)/self.buffer_size
+            
         mean_func = scipy.interpolate.interp1d(self.timesteps, self.mean, kind='linear')
-        self.var = self.beta*self.var + (1-self.beta)*(weights@((mean_func(t) - new_p)**2/p_t))
-        self.construct_dist(np.sqrt(self.var))
+        var = np.zeros_like(self.timesteps)
+        for i in range(len(self.buffer_values)):
+            p = self.buffer_values[i]
+            t = self.buffer_times[i]
+            p_t = self.buffer_pt[i]
+            weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
+            weights = weights/weights.sum(0,keepdims=True)/weights.shape[1]
+            var += weights@((mean_func(t) - p)**2/p_t)/self.buffer_size
+        if len(self.buffer_values) < self.buffer_size:
+            self.construct_dist(np.ones_like(self.timesteps))
+        else:
+            self.construct_dist(np.sqrt(var))
+
+#     def update_history(self, new_p, t, p_t):
+#         new_p, t, p_t = new_p.cpu().numpy().flatten(), t.cpu().numpy().flatten(), p_t.cpu().numpy().flatten()
+#         weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
+#         weights = weights/weights.sum(0,keepdims=True)/weights.shape[1]
+#         self.mean = self.beta*self.mean + (1-self.beta)*(weights@(new_p/p_t))
+#         mean_func = scipy.interpolate.interp1d(self.timesteps, self.mean, kind='linear')
+#         self.var = self.beta*self.var + (1-self.beta)*(weights@((mean_func(t) - new_p)**2/p_t))
+#         self.construct_dist(np.sqrt(self.var))
     
     def eval_loss(self, x):
         q_t, w, dwdt, s = self.q_t, self.w, self.dwdt, self.s
@@ -210,7 +210,7 @@ class AdaptiveLoss:
             self.meters['s_1_std'].update((s(t_1,x_1).sum(1)*w(t_1).squeeze()).detach().cpu().std())
 #             time_loss += (-s(t_1,x_1)*w(t_1)).squeeze().detach().mean()
             
-        self.meters['train_loss'].update(loss.detach().mean())
+        self.meters['train_loss'].update(loss.detach().mean().cpu())
         self.update_history(gather(time_loss), gather(t), gather(p_t))
         return loss.mean(), self.meters
     
@@ -236,7 +236,7 @@ class ScoreLoss:
         x_t, eps = self.q_t(x, t)
         loss_sm = ((eps - self.net(t, x_t)) ** 2).sum(dim=(1, 2, 3))    
         loss_sm = loss_sm.mean()
-        self.meters['train_loss'].update(loss.detach().mean())
+        self.meters['train_loss'].update(loss.detach().mean().cpu())
         return loss_sm, self.meters
     
     def get_dxdt(self):

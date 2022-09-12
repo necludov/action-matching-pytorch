@@ -5,6 +5,7 @@ import wandb
 import os
 import shutil
 import torch.distributions as D
+import torch.distributed as dist
 
 from copy import deepcopy
 from torch import nn
@@ -22,13 +23,15 @@ from utils import stack_imgs, is_main_host, gather
 import scipy.interpolate
 
 
-def train(net, train_loader, val_loader, optim, ema, device, config):
+def train(net, train_loader, val_loader, optim, ema, device, config, train_sampler=None):
     loss = get_loss(net, config)
     step = config.train.current_step
     for epoch in trange(config.train.current_epoch, config.train.n_epochs):
+        if train_sampler:
+            train_sampler.set_epoch(epoch)
         net.train()
         for x, y in train_loader:
-            x, y = x.to(device), y.to(device)
+            x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
             x = flatten_data(x, y, config)
             loss_total, meters = loss.eval_loss(x)
             optim.zero_grad(set_to_none=True)
@@ -41,8 +44,10 @@ def train(net, train_loader, val_loader, optim, ema, device, config):
                 torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=config.train.grad_clip)
             optim.step()
             ema.update(net.parameters())
-            if (step % 50) == 0 and is_main_host():
-                wandb.log(dict((k, meters[k].get_val()) for k in meters), step=step)
+            if (step % 50) == 0:
+                logging_dict = dict((k, meters[k].get_val()) for k in meters)
+                if is_main_host():
+                    wandb.log(logging_dict, step=step)
                 for k in meters: meters[k].reset()
             step += 1
 
@@ -81,17 +86,17 @@ def evaluate_generic(step, epoch, q_t, s, val_loader, device, config):
     ydim, C_cond = config.data.ydim, config.model.cond_channels
     
     x, y = next(iter(val_loader))
-    x, y = x.to(device)[:B], y.to(device)[:B]
+    x, y = x.to(device, non_blocking=True)[:B], y.to(device, non_blocking=True)[:B]
     x = flatten_data(x, y, config)
-    x_1, _ = q_t(x, t1*torch.ones([B, 1]).to(device))
+    x_1, _ = q_t(x, t1*torch.ones([B, 1], device=device))
     img, nfe_gen = solve_ode(device, s, x_1, t0=t1, t1=t0, method='euler')
     img = img.view(B, C + C_cond, W, H)
     if C_cond > 0:
         img = img[:,:C,:,:]
     
-    img = img*torch.tensor(config.data.norm_std).view(1,C,1,1).to(img.device)
-    img = img + torch.tensor(config.data.norm_mean).view(1,C,1,1).to(img.device)
-    img = gather(img)
+    img = img*torch.tensor(config.data.norm_std, device=img.device).view(1,C,1,1)
+    img = img + torch.tensor(config.data.norm_mean, device=img.device).view(1,C,1,1)
+    img = gather(img.cuda()).cpu()
 
     if is_main_host():
         meters = {'epoch': epoch, 

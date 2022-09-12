@@ -3,7 +3,7 @@ from evolutions import *
 
 def get_configs():
     model_dict = dotdict()
-    model_dict.nf = 64
+    model_dict.nf = 128
     model_dict.ch_mult = (1, 2, 2, 2)
     model_dict.num_res_blocks = 2
     model_dict.num_channels = 3

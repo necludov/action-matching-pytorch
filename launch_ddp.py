@@ -25,6 +25,7 @@ def launch_traininig(args, config, state=None):
     local_gpu = int(os.environ["LOCAL_RANK"])
     rank =  int(os.environ["RANK"])
     print(rank, "Use GPU: {} for training".format(local_gpu))
+    config.train.seed = config.train.seed + rank
     np.random.seed(config.train.seed)
     torch.manual_seed(config.train.seed)
     random.seed(config.train.seed)
@@ -35,12 +36,12 @@ def launch_traininig(args, config, state=None):
     torch.cuda.set_device(device)
 
     if 'mnist' == args.dataset:
-        from utils import get_dataset_MNIST as get_dataset
+        from utils import get_dataset_MNIST_DDP as get_dataset
     elif 'cifar' == args.dataset:
-        from utils import get_dataset_CIFAR10 as get_dataset
+        from utils import get_dataset_CIFAR10_DDP as get_dataset
     else:
         raise NameError('unknown dataset')
-    train_loader, val_loader = get_dataset(config)
+    train_loader, val_loader, train_sampler = get_dataset(config)
 
     if 'am' == config.model.objective:
         net = anet.ActionNet(config)
@@ -69,7 +70,7 @@ def launch_traininig(args, config, state=None):
                    config=config)
         os.environ["WANDB_RESUME"] = "allow"
         os.environ["WANDB_RUN_ID"] = config.train.wandbid
-    train(net, train_loader, val_loader, optim, ema_, device, config)
+    train(net, train_loader, val_loader, optim, ema_, device, config, train_sampler)
     
 def main(args):
     filenames = os.listdir(args.checkpoint_dir)
