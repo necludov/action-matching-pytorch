@@ -50,10 +50,25 @@ class DDPAverageMeter(object):
             self.avg = avg.item() / dist.get_world_size()
         return self.val
 
+def is_dist_avail_and_initialized():
+    if not dist.is_available():
+        return False
+    if not dist.is_initialized():
+        return False
+    return True
+
+def get_rank():
+    if not is_dist_avail_and_initialized():
+        return 0
+    return dist.get_rank()
+
+def get_world_size():
+    if not is_dist_avail_and_initialized():
+        return 1
+    return dist.get_world_size()
+
 def is_main_host():
-    if "RANK" not in os.environ:
-        raise RuntimeError("RANK not found in environment variables!")
-    return int(os.environ["RANK"]) == 0
+    return get_rank() == 0
 
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
@@ -113,7 +128,7 @@ def get_dataset_CIFAR10_DDP(config):
     train_loader = DataLoader(
         train_data,
         batch_size=BATCH_SIZE,
-        shuffle=(train_sampler is None),
+        shuffle=False,
         num_workers=4,
         drop_last=True, 
         pin_memory=True, 
@@ -122,7 +137,7 @@ def get_dataset_CIFAR10_DDP(config):
     val_loader = DataLoader(
         val_data,
         batch_size=BATCH_SIZE,
-        shuffle=(train_sampler is None),
+        shuffle=False,
         num_workers=4,
         drop_last=True, 
         pin_memory=True, 
@@ -177,7 +192,7 @@ def get_dataset_MNIST_DDP(config):
     train_loader = DataLoader(
         train_data,
         batch_size=BATCH_SIZE,
-        shuffle=(train_sampler is None),
+        shuffle=False,
         num_workers=4,
         drop_last=True, 
         pin_memory=True, 
@@ -186,7 +201,7 @@ def get_dataset_MNIST_DDP(config):
     val_loader = DataLoader(
         val_data,
         batch_size=BATCH_SIZE,
-        shuffle=(train_sampler is None),
+        shuffle=False,
         num_workers=4,
         drop_last=True, 
         pin_memory=True, 

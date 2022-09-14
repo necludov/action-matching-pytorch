@@ -18,7 +18,7 @@ from tqdm.auto import tqdm, trange
 from models import anet, ddpm
 from models import ema
 from train_utils import train
-from utils import is_main_host
+from utils import is_main_host, get_world_size
 
     
 def launch_traininig(args, config, state=None):
@@ -31,9 +31,9 @@ def launch_traininig(args, config, state=None):
     random.seed(config.train.seed)
     
     dist.init_process_group(backend='nccl', init_method="env://")
-    config.data.batch_size = config.data.batch_size//dist.get_world_size()
+    config.data.batch_size = config.data.batch_size//get_world_size()
+    torch.cuda.set_device(local_gpu)
     device = torch.device(local_gpu)
-    torch.cuda.set_device(device)
 
     if 'mnist' == args.dataset:
         from utils import get_dataset_MNIST_DDP as get_dataset

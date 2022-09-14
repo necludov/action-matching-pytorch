@@ -27,9 +27,9 @@ def train(net, train_loader, val_loader, optim, ema, device, config, train_sampl
     loss = get_loss(net, config)
     step = config.train.current_step
     for epoch in trange(config.train.current_epoch, config.train.n_epochs):
-        if train_sampler:
-            train_sampler.set_epoch(epoch)
         net.train()
+        if train_sampler is not None:
+            train_sampler.set_epoch(epoch)
         for x, y in train_loader:
             x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
             x = flatten_data(x, y, config)
