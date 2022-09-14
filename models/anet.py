@@ -138,6 +138,7 @@ class ActionNet(nn.Module):
 
     self.nf = nf = config.model.nf
     self.nc = nc = config.model.num_channels
+    self.n_phases = config.model.n_phases
     ch_mult = config.model.ch_mult
     self.num_res_blocks = num_res_blocks = config.model.num_res_blocks
     self.attn_resolutions = attn_resolutions = config.model.attn_resolutions
@@ -212,6 +213,9 @@ class ActionNet(nn.Module):
     temb = modules[m_idx](self.act(temb))
     m_idx += 1
     
+    if self.n_phases is not None:
+        if self.n_phases > 0:
+            x = layers.get_circular_embedding(x, self.n_phases, self.nc)
     if condition is not None:
         x = torch.hstack([x, condition.detach()])
 

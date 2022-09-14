@@ -17,12 +17,13 @@ env
 
 NUM_GPUs=`nvidia-smi --query-gpu=name --format=csv,noheader | wc -l`
 
-cmd="python -m torch.distributed.run \
+cmd="torchrun \
     --nnodes ${SLURM_NNODES} \
     --node_rank ${SLURM_NODEID} \
     --nproc_per_node ${NUM_GPUs} \
-    --master_addr ${MASTER_ADDR} \
-    --master_port ${MASTER_PORT} \
+    --rdzv_id=${SLURM_PROCID}
+    --rdzv_backend=c10d
+    --rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT}
         ../../launch_ddp.py  \
         --checkpoint_dir $PWD/checkpoint_${SLURM_JOB_ID} \
         --dataset cifar

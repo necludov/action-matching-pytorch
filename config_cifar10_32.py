@@ -14,7 +14,7 @@ def get_configs():
     model_dict.t0, model_dict.t1 = 0.0, 1.0
     model_dict.resamp_with_conv = True
     model_dict.objective = 'am' # am or sm
-    model_dict.task = 'torus'
+    model_dict.task = 'diffusion'
     model_dict.sigma = 'variance'
     model_dict.uniform = False
     model_dict.skip = True

@@ -101,6 +101,7 @@ class AdaptiveLoss:
         self.u0 = (self.u0 + np.sqrt(2)*n*self.ws) % 1
         u = u[self.rank*n:(self.rank+1)*n]
         t = self.F_inv(u)
+        assert ((t < 0.0).sum() == 0) and ((t > 1.0).sum() == 0)
         p_t, dpdt = self.fp(t), self.dpdt(t)
         p_0, p_1 = self.fp(self.t0*np.ones_like(t)), self.fp(self.t1*np.ones_like(t))
         t = torch.from_numpy(t).to(device).float()
@@ -204,19 +205,21 @@ class AdaptiveLoss:
             x_0, _ = q_t(x, t_0)
             left_bound = (s(t_0,x_0)*w(t_0)).squeeze()
             loss = loss + left_bound
+            time_loss += left_bound.detach().mean()
             self.meters['s_0_std'].update(left_bound.detach().cpu().std())
         if self.boundary_conditions[1]:
             t_1 = t_1*torch.ones([bs, 1], device=device)
             x_1, _ = q_t(x, t_1)
             right_bound = (-s(t_1,x_1)*w(t_1)).squeeze()
             loss = loss + right_bound
+            time_loss += right_bound.detach().mean()
             self.meters['s_1_std'].update(right_bound.detach().cpu().std())
             
         self.meters['train_loss'].update(loss.detach().mean().cpu())
-#         dmetricdt = (0.5*(dsdx**2).sum(1)).detach()
+        dmetricdt = (0.5*(dsdx**2).sum(1)).detach()
 #         dmetricdt = (0.5*(dsdx**2).sum(1)*w(t).squeeze()).detach()
-#         self.update_history(gather(dmetricdt), gather(t), gather(p_t))
-        self.update_history(gather(time_loss), gather(t), gather(p_t))
+        self.update_history(gather(dmetricdt), gather(t), gather(p_t))
+#         self.update_history(gather(time_loss), gather(t), gather(p_t))
         return loss.mean(), self.meters
     
     def get_dxdt(self):
