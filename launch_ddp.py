@@ -21,7 +21,7 @@ from train_utils import train
 from utils import is_main_host, get_world_size
 
     
-def launch_traininig(args, config, state=None):
+def launch_traininig(args, config):
     local_gpu = int(os.environ["LOCAL_RANK"])
     rank =  int(os.environ["RANK"])
     print(rank, "Use GPU: {} for training".format(local_gpu))
@@ -56,7 +56,9 @@ def launch_traininig(args, config, state=None):
                              eps=1e-8, weight_decay=config.train.wd)
     ema_ = ema.ExponentialMovingAverage(net.parameters(), decay=config.eval.ema)
     
-    if state is not None:
+    if config.model.last_checkpoint is not None:
+        state = torch.load(config.model.last_checkpoint, map_location=device)
+        print('starting from existing checkpoint')
         net.load_state_dict(state['model'], strict=True)
         ema_.load_state_dict(state['ema'])
         optim.load_state_dict(state['optim'])
@@ -76,17 +78,19 @@ def main(args):
     filenames = os.listdir(args.checkpoint_dir)
     configs = list(filter(lambda f: '.config' in f, filenames))
     has_config = len(configs) > 0
-    if has_config:
+    if args.config_path is not None:
+        # starting from checkpoint
+        config_name = args.config_path
+        print('starting from existing config:', config_name)
+        config = torch.load(config_name)
+    elif has_config:
+        # preemption case
         assert len(configs) == 1
         config_name = os.path.join(args.checkpoint_dir, configs[0])
         print('starting from existing config:', config_name)
         config = torch.load(config_name)
-        if (config.model.last_checkpoint is not None) and is_main_host():
-            state = torch.load(config.model.last_checkpoint)
-            print('starting from existing checkpoint')
-        else:
-            state = None
     else:
+        # init from default config
         if 'mnist' == args.dataset:
             from config_mnist import get_configs
         elif 'cifar' == args.dataset:
@@ -94,15 +98,11 @@ def main(args):
         else:
             raise NameError('unknown dataset')
         config = get_configs()
-        if (config.model.last_checkpoint is not None) and is_main_host():
-            state = torch.load(config.model.last_checkpoint)
-            print('starting from existing checkpoint')
         if is_main_host():
             config.model.savepath = os.path.join(args.checkpoint_dir, config.model.savepath)
             config.train.wandbid = wandb.util.generate_id()
             torch.save(config, config.model.savepath + '.config')
-        state = None
-    launch_traininig(args, config, state)
+    launch_traininig(args, config)
 
 
 if __name__ == "__main__":
@@ -122,6 +122,13 @@ if __name__ == "__main__":
         type=str,
         help='dataset: mnist or cifar',
         default='cifar'
+    )
+    
+    parser.add_argument(
+        '--config_path',
+        type=str,
+        help='path to config in case of starting from checkpoint',
+        default=None
     )
     
     main(parser.parse_args())

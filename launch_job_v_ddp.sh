@@ -9,11 +9,11 @@
 # for normal t4v2,t4v1,rtx6000,p100
 # for high t4v2
 # for deadline t4v2,t4v1,p100
-#SBATCH --partition=t4v2
+#SBATCH --partition=t4v2,t4v1,p100
 
 #SBATCH --gres=gpu:4
-# --account=deadline
-#SBATCH --qos=high
+#SBATCH --account=deadline
+#SBATCH --qos=deadline
 #SBATCH --output=./logs/slurm-%j.out
 #SBATCH --error=./logs/slurm-%j.err
 # Append is important because otherwise preemption resets the file
