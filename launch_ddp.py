@@ -81,7 +81,7 @@ def main(args):
         config_name = os.path.join(args.checkpoint_dir, configs[0])
         print('starting from existing config:', config_name)
         config = torch.load(config_name)
-        if config.model.last_checkpoint is not None:
+        if (config.model.last_checkpoint is not None) and is_main_host():
             state = torch.load(config.model.last_checkpoint)
             print('starting from existing checkpoint')
         else:
@@ -94,6 +94,9 @@ def main(args):
         else:
             raise NameError('unknown dataset')
         config = get_configs()
+        if (config.model.last_checkpoint is not None) and is_main_host():
+            state = torch.load(config.model.last_checkpoint)
+            print('starting from existing checkpoint')
         if is_main_host():
             config.model.savepath = os.path.join(args.checkpoint_dir, config.model.savepath)
             config.train.wandbid = wandb.util.generate_id()
