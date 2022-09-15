@@ -15,7 +15,6 @@ from torch.utils.data import DataLoader
 from PIL import Image
 from tqdm.auto import tqdm, trange
 
-from losses import get_loss
 from evaluation import *
 from evolutions import get_q
 from utils import stack_imgs, is_main_host, gather
@@ -23,8 +22,7 @@ from utils import stack_imgs, is_main_host, gather
 import scipy.interpolate
 
 
-def train(net, train_loader, val_loader, optim, ema, device, config, train_sampler=None):
-    loss = get_loss(net, config)
+def train(net, loss, train_loader, val_loader, optim, ema, device, config, train_sampler=None):
     step = config.train.current_step
     for epoch in trange(config.train.current_epoch, config.train.n_epochs):
         net.train()
@@ -52,11 +50,11 @@ def train(net, train_loader, val_loader, optim, ema, device, config, train_sampl
             step += 1
 
         if ((epoch % config.train.save_every) == 0) and is_main_host():
-            save(step, epoch, net, ema, optim, config)
+            save(step, epoch, net, ema, optim, loss, config)
         if ((epoch % config.train.eval_every) == 0) and (epoch >= config.train.first_eval):
             evaluate(step, epoch, net, ema, loss.get_dxdt(), val_loader, device, config)
     if is_main_host():
-        save(step, epoch, net, ema, optim, config)
+        save(step, epoch, net, ema, optim, loss, config)
     evaluate(step, epoch, net, ema, loss.get_dxdt(), val_loader, device, config)
             
 def evaluate(step, epoch, net, ema, s, val_loader, device, config):
@@ -189,13 +187,14 @@ def evaluate_cond(step, epoch, s, val_loader, device, config):
     wandb.log(meters, step=step)
 
     
-def save(step, epoch, net, ema, optim, config):
+def save(step, epoch, net, ema, optim, loss, config):
     config.model.last_checkpoint = config.model.savepath + '_%d.cpt' % epoch
     config.train.current_epoch = epoch
     config.train.current_step = step
     torch.save({'model': net.state_dict(), 
                 'ema': ema.state_dict(), 
-                'optim': optim.state_dict()}, config.model.last_checkpoint)
+                'optim': optim.state_dict(),
+                'loss': loss.state_dict()}, config.model.last_checkpoint)
     torch.save(config, config.model.savepath + '.config')
     
 def flatten_data(x,y,config):

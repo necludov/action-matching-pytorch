@@ -45,11 +45,13 @@ def launch_traininig(args, config, state=None):
     optim = torch.optim.Adam(net.parameters(), lr=config.train.lr, betas=config.train.betas, 
                              eps=1e-8, weight_decay=config.train.wd)
     ema_ = ema.ExponentialMovingAverage(net.parameters(), decay=config.eval.ema)
+    loss = get_loss(net, config)
     
     if state is not None:
         net.load_state_dict(state['model'], strict=True)
         ema_.load_state_dict(state['ema'])
         optim.load_state_dict(state['optim'])
+        loss.load_state_dict(state['loss'])
         print('dicts are successfully loaded')
 
     wandb.init(id=config.train.wandbid, 
@@ -58,7 +60,7 @@ def launch_traininig(args, config, state=None):
                config=config)
     os.environ["WANDB_RESUME"] = "allow"
     os.environ["WANDB_RUN_ID"] = config.train.wandbid
-    train(net, train_loader, val_loader, optim, ema_, device, config)
+    train(net, loss, train_loader, val_loader, optim, ema_, device, config)
     
 def main(args):
     filenames = os.listdir(args.checkpoint_dir)

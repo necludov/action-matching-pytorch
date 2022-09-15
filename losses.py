@@ -36,7 +36,6 @@ class AdaptiveLoss:
         self.alpha, self.beta = config.train.alpha, beta
         self.timesteps = np.linspace(self.t0, self.t1, n)
         self.dt = (self.t1-self.t0)/(n-1)
-        self.u0 = 0.5
         self.rank = get_rank()
         self.ws = get_world_size()
         
@@ -48,14 +47,14 @@ class AdaptiveLoss:
         
         self.s = get_s(net, config)
         
-        self.mean = np.zeros_like(self.timesteps)
-        self.var = np.ones_like(self.timesteps)
-        self.use_var = config.train.use_var
-        self.buffer_values = []
-        self.buffer_times = []
-        self.buffer_pt = []
-        self.buffer_size = 100
-        self.construct_dist(np.ones_like(self.timesteps))
+        self.buffer = {'values': [],
+                       'times': [],
+                       'size': 100,
+                       'mean': np.zeros_like(self.timesteps),
+                       'var': np.ones_like(self.timesteps),
+                       'p': np.ones_like(self.timesteps),
+                       'u0': 0.5}
+        self.construct_dist()
         
         meters = [DDPAverageMeter('train_loss'),
                   DDPAverageMeter('dsdx_std'),
@@ -65,10 +64,16 @@ class AdaptiveLoss:
                   DDPAverageMeter('s_std')]
         self.meters = dict((m.name,m) for m in meters)
         
-    def construct_dist(self, p):
+    def load_state_dict(self, buffer_dict):
+        self.buffer = buffer_dict
+        self.construct_dist()
+        
+    def state_dict(self):
+        return self.buffer
+        
+    def construct_dist(self):
         dt, t = self.dt, self.timesteps
-        p = (1.0-self.alpha)*p/((p[1:]+p[:-1])*dt/2).sum() + self.alpha/(self.t1-self.t0)
-        self.p = p
+        p = self.buffer['p']
         self.fp = scipy.interpolate.interp1d(t, p, kind='linear')
         self.dpdt = scipy.interpolate.interp1d(t, np.concatenate([p[1:]-p[:-1], p[-1:]-p[-2:-1]])/dt, kind='zero')
         intercept = lambda t: self.fp(t)-self.dpdt(t)*t
@@ -97,8 +102,8 @@ class AdaptiveLoss:
         self.F_inv = F_inv
         
     def sample_t(self, n, device):
-        u = (self.u0 + np.sqrt(2)*np.arange(n*self.ws)) % 1
-        self.u0 = (self.u0 + np.sqrt(2)*n*self.ws) % 1
+        u = (self.buffer['u0'] + np.sqrt(2)*np.arange(n*self.ws)) % 1
+        self.buffer['u0'] = (self.buffer['u0'] + np.sqrt(2)*n*self.ws) % 1
         u = u[self.rank*n:(self.rank+1)*n]
         t = self.F_inv(u)
         assert ((t < 0.0).sum() == 0) and ((t > 1.0).sum() == 0)
@@ -136,45 +141,47 @@ class AdaptiveLoss:
 #         else:
 #             self.construct_dist(np.sqrt(var))
 
+#     def update_history(self, new_p, t, p_t):
+#         new_p, t, p_t = new_p.cpu().numpy().flatten(), t.cpu().numpy().flatten(), p_t.cpu().numpy().flatten()
+#         weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
+#         weights = weights/weights.sum(1,keepdims=True)
+#         self.buffer['mean'] += weights@(new_p)/self.buffer['size']
+
+#         self.buffer['values'].append(new_p)
+#         self.buffer['times'].append(t)
+#         if len(self.buffer['values']) > self.buffer['size']:
+#             p = self.buffer['values'].pop(0)
+#             t = self.buffer['times'].pop(0)
+#             weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
+#             weights = weights/weights.sum(1,keepdims=True)
+#             self.buffer['mean'] -= weights@(p)/self.buffer['size']
+#             assert len(self.buffer['values']) == self.buffer['size']
+            
+#         mean_func = scipy.interpolate.interp1d(self.timesteps, self.buffer['mean'], kind='linear')
+#         var = np.zeros_like(self.timesteps)
+#         for i in range(len(self.buffer['values'])):
+#             p = self.buffer['values'][i]
+#             t = self.buffer['times'][i]
+#             weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
+#             weights = weights/weights.sum(1,keepdims=True)
+#             var += weights@((mean_func(t) - p)**2)/self.buffer['size']
+#         if len(self.buffer['values']) == self.buffer['size']:
+#             p = np.sqrt(var)
+#             p = (1.0-self.alpha)*p/((p[1:]+p[:-1])*self.dt/2).sum() + self.alpha/(self.t1-self.t0)    
+#             self.buffer['p'] = p
+#         self.construct_dist()
+
     def update_history(self, new_p, t, p_t):
         new_p, t, p_t = new_p.cpu().numpy().flatten(), t.cpu().numpy().flatten(), p_t.cpu().numpy().flatten()
         weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
         weights = weights/weights.sum(1,keepdims=True)
-        self.mean += weights@(new_p)/self.buffer_size
-
-        self.buffer_values.append(new_p)
-        self.buffer_times.append(t)
-        self.buffer_pt.append(p_t)
-        if len(self.buffer_values) > self.buffer_size:
-            p = self.buffer_values.pop(0)
-            t = self.buffer_times.pop(0)
-            p_t = self.buffer_pt.pop(0)
-            weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
-            weights = weights/weights.sum(1,keepdims=True)
-            self.mean -= weights@(p)/self.buffer_size
-            
-        mean_func = scipy.interpolate.interp1d(self.timesteps, self.mean, kind='linear')
-        var = np.zeros_like(self.timesteps)
-        for i in range(len(self.buffer_values)):
-            p = self.buffer_values[i]
-            t = self.buffer_times[i]
-            p_t = self.buffer_pt[i]
-            weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
-            weights = weights/weights.sum(1,keepdims=True)
-            var += weights@((mean_func(t) - p)**2)/self.buffer_size
-        if len(self.buffer_values) < self.buffer_size:
-            self.construct_dist(np.ones_like(self.timesteps))
-        else:
-            self.construct_dist(np.sqrt(var))
-
-#     def update_history(self, new_p, t, p_t):
-#         new_p, t, p_t = new_p.cpu().numpy().flatten(), t.cpu().numpy().flatten(), p_t.cpu().numpy().flatten()
-#         weights = np.exp(-np.abs(self.timesteps.reshape(-1, 1) - t.reshape(1,-1))*1e2)
-#         weights = weights/weights.sum(0,keepdims=True)/weights.shape[1]
-#         self.mean = self.beta*self.mean + (1-self.beta)*(weights@(new_p/p_t))
-#         mean_func = scipy.interpolate.interp1d(self.timesteps, self.mean, kind='linear')
-#         self.var = self.beta*self.var + (1-self.beta)*(weights@((mean_func(t) - new_p)**2/p_t))
-#         self.construct_dist(np.sqrt(self.var))
+        self.buffer['mean'] = self.beta*self.buffer['mean'] + (1-self.beta)*(weights@new_p)
+        mean_func = scipy.interpolate.interp1d(self.timesteps, self.buffer['mean'], kind='linear')
+        self.buffer['var'] = self.beta*self.buffer['var'] + (1-self.beta)*(weights@((mean_func(t) - new_p)**2))
+        p = np.sqrt(self.buffer['var'])
+        p = (1.0-self.alpha)*p/((p[1:]+p[:-1])*self.dt/2).sum() + self.alpha/(self.t1-self.t0)
+        self.buffer['p'] = p
+        self.construct_dist()
     
     def eval_loss(self, x):
         q_t, w, dwdt, s = self.q_t, self.w, self.dwdt, self.s
@@ -205,21 +212,16 @@ class AdaptiveLoss:
             x_0, _ = q_t(x, t_0)
             left_bound = (s(t_0,x_0)*w(t_0)).squeeze()
             loss = loss + left_bound
-            time_loss += left_bound.detach().mean()
             self.meters['s_0_std'].update(left_bound.detach().cpu().std())
         if self.boundary_conditions[1]:
             t_1 = t_1*torch.ones([bs, 1], device=device)
             x_1, _ = q_t(x, t_1)
             right_bound = (-s(t_1,x_1)*w(t_1)).squeeze()
             loss = loss + right_bound
-            time_loss += right_bound.detach().mean()
             self.meters['s_1_std'].update(right_bound.detach().cpu().std())
             
         self.meters['train_loss'].update(loss.detach().mean().cpu())
-        dmetricdt = (0.5*(dsdx**2).sum(1)).detach()
-#         dmetricdt = (0.5*(dsdx**2).sum(1)*w(t).squeeze()).detach()
-        self.update_history(gather(dmetricdt), gather(t), gather(p_t))
-#         self.update_history(gather(time_loss), gather(t), gather(p_t))
+        self.update_history(gather(time_loss), gather(t), gather(p_t))
         return loss.mean(), self.meters
     
     def get_dxdt(self):
@@ -236,6 +238,12 @@ class ScoreLoss:
         self.C_cond = config.model.cond_channels
         meters = [DDPAverageMeter('train_loss')]
         self.meters = dict((m.name,m) for m in meters)
+        
+    def load_state_dict(self, buffer_dict):
+        return
+        
+    def state_dict(self):
+        return {}
         
     def eval_loss(self, x):
         device = x.device

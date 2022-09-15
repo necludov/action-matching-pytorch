@@ -513,16 +513,16 @@ class ResidualBlock(nn.Module):
 #  https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/nn.py
 ###########################################################################
 
-def get_circular_embedding(x, n_phases, embed_dim):
+def get_circular_embedding(x, n_phases, n_freqs):
   B, C, H, W = x.shape
-  n_freqs = embed_dim//n_phases//C
+  embed_dim = n_freqs*n_phases*C
   freqs = torch.pow(2, torch.arange(n_freqs, device=x.device))
   phases = torch.linspace(0.0, 2*math.pi, n_phases + 1, device=x.device)[:-1]
   x = x.view(B,C,1,1,H,W)
   freqs = freqs.view(1,1,-1,1,1,1)
   phases = phases.view(1,1,1,-1,1,1)
   emb = torch.cos(2*math.pi*x*freqs + phases)
-  emb = emb.reshape(B,C*n_freqs*n_phases,H,W)
+  emb = emb.reshape(B,embed_dim,H,W)
   return emb
 
 def get_timestep_embedding(timesteps, embedding_dim, max_positions=10000):

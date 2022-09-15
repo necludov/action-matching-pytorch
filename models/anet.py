@@ -139,6 +139,7 @@ class ActionNet(nn.Module):
     self.nf = nf = config.model.nf
     self.nc = nc = config.model.num_channels
     self.n_phases = config.model.n_phases
+    self.n_freqs = config.model.n_freqs
     ch_mult = config.model.ch_mult
     self.num_res_blocks = num_res_blocks = config.model.num_res_blocks
     self.attn_resolutions = attn_resolutions = config.model.attn_resolutions
@@ -161,7 +162,10 @@ class ActionNet(nn.Module):
 
     # Downsampling block
     self.conditional = config.model.cond_channels
-    modules.append(conv3x3(nc + config.model.cond_channels, nf))
+    if self.n_phases is not None:
+        modules.append(conv3x3(nc*self.n_phases*self.n_freqs + config.model.cond_channels, nf))
+    else:
+        modules.append(conv3x3(nc + config.model.cond_channels, nf))
     hs_c = [nf]
     in_ch = nf
     for i_level in range(num_resolutions):
@@ -215,7 +219,7 @@ class ActionNet(nn.Module):
     
     if self.n_phases is not None:
         if self.n_phases > 0:
-            x = layers.get_circular_embedding(x, self.n_phases, self.nc)
+            x = layers.get_circular_embedding(x, self.n_phases, self.n_freqs)
     if condition is not None:
         x = torch.hstack([x, condition.detach()])
 

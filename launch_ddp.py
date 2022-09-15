@@ -15,6 +15,7 @@ import wandb
 from torch import nn
 from tqdm.auto import tqdm, trange
 
+from losses import get_loss
 from models import anet, ddpm
 from models import ema
 from train_utils import train
@@ -55,6 +56,7 @@ def launch_traininig(args, config):
     optim = torch.optim.Adam(net.parameters(), lr=config.train.lr, betas=config.train.betas, 
                              eps=1e-8, weight_decay=config.train.wd)
     ema_ = ema.ExponentialMovingAverage(net.parameters(), decay=config.eval.ema)
+    loss = get_loss(net, config)
     
     if config.model.last_checkpoint is not None:
         state = torch.load(config.model.last_checkpoint, map_location=device)
@@ -62,6 +64,7 @@ def launch_traininig(args, config):
         net.load_state_dict(state['model'], strict=True)
         ema_.load_state_dict(state['ema'])
         optim.load_state_dict(state['optim'])
+        loss.load_state_dict(state['loss'])
         print('dicts are successfully loaded')
 
     if is_main_host():
@@ -72,7 +75,7 @@ def launch_traininig(args, config):
                    config=config)
         os.environ["WANDB_RESUME"] = "allow"
         os.environ["WANDB_RUN_ID"] = config.train.wandbid
-    train(net, train_loader, val_loader, optim, ema_, device, config, train_sampler)
+    train(net, loss, train_loader, val_loader, optim, ema_, device, config, train_sampler)
     
 def main(args):
     filenames = os.listdir(args.checkpoint_dir)
