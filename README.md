@@ -17,7 +17,7 @@ The dynamics goes backward in time (from $t=1$ to $t=0$), and follows the antigr
 
 ## useful snippets
 
-# launch baselines
+### launch baselines
 ```bash
 sbatch ./launch_job_v_ddp.sh --dataset cifar --job_config_name sm_cifar_color
 sbatch ./launch_job_v_ddp.sh --dataset cifar --job_config_name sm_cifar_diffusion
@@ -25,7 +25,7 @@ sbatch ./launch_job_v_ddp.sh --dataset cifar --job_config_name sm_cifar_superres
 sbatch ./launch_job_v_ddp.sh --dataset mnist --job_config_name sm_mnist_diffusion
 ```
 
-# launch AM for mnist
+### launch AM for mnist
 ```
 sbatch ./launch_job_v_ddp.sh --dataset mnist --job_config_name am_mnist_diffusion
 sbatch ./launch_job_v_ddp.sh --dataset mnist --job_config_name am_mnist_torus
