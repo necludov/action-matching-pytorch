@@ -162,7 +162,7 @@ class ActionNet(nn.Module):
 
     # Downsampling block
     self.conditional = config.model.cond_channels
-    if self.n_phases is not None:
+    if config.model.task == 'torus':
         modules.append(conv3x3(nc*self.n_phases*self.n_freqs + config.model.cond_channels, nf))
     else:
         modules.append(conv3x3(nc + config.model.cond_channels, nf))
@@ -265,4 +265,4 @@ class ActionNet(nn.Module):
     h = modules[m_idx](h)
     m_idx += 1
     assert m_idx == len(modules)
-    return 0.5*((h-x[:,:self.nc])**2).sum([1,2,3]).unsqueeze(1)
+    return -0.5*((h-x[:,:self.nc])**2).sum([1,2,3]).unsqueeze(1)
