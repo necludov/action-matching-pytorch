@@ -14,6 +14,7 @@ import wandb
 
 from torch import nn
 from tqdm.auto import tqdm, trange
+from configs import job_configs
 
 from losses import get_loss
 from models import anet, ddpm
@@ -32,7 +33,8 @@ def launch_traininig(args, config):
     random.seed(config.train.seed)
     
     dist.init_process_group(backend='nccl', init_method="env://")
-    config.data.batch_size = config.data.total_batch_size//get_world_size()
+    NNN = get_world_size()
+    config.data.batch_size = config.data.total_batch_size//NNN 
     torch.cuda.set_device(local_gpu)
     device = torch.device(local_gpu)
 
@@ -92,19 +94,14 @@ def main(args):
         config_name = os.path.join(args.checkpoint_dir, configs[0])
         print('starting from existing config:', config_name)
         config = torch.load(config_name)
-    else:
-        # init from default config
-        if 'mnist' == args.dataset:
-            from config_mnist import get_configs
-        elif 'cifar' == args.dataset:
-            from config_cifar10_32 import get_configs
-        else:
-            raise NameError('unknown dataset')
-        config = get_configs()
+    elif args.job_config_name is not None:
+        config = job_configs[args.job_config_name]
         if is_main_host():
             config.model.savepath = os.path.join(args.checkpoint_dir, config.model.savepath)
             config.train.wandbid = wandb.util.generate_id()
             torch.save(config, config.model.savepath + '.config')
+    else:
+        raise ValueError()
     launch_traininig(args, config)
 
 
@@ -132,6 +129,13 @@ if __name__ == "__main__":
         type=str,
         help='path to config in case of starting from checkpoint',
         default=None
+    )
+
+    parser.add_argument(
+        '--job_config_name',
+        type=str,
+        help='name of config to load from configs.py',
+        default='experimental'
     )
     
     main(parser.parse_args())

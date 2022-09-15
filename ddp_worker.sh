@@ -26,7 +26,6 @@ cmd="torchrun \
     --rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT}
         ../../launch_ddp.py  \
         --checkpoint_dir $PWD/checkpoint_${SLURM_JOB_ID} \
-        --dataset cifar
         $* \
     "
 

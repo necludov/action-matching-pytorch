@@ -14,8 +14,10 @@ import wandb
 from torch import nn
 from tqdm.auto import tqdm, trange
 
+from configs import job_configs
 from models import anet, ddpm
 from models import ema
+from losses import get_loss
 from train_utils import train
 
     
@@ -76,18 +78,14 @@ def main(args):
             print('starting from existing checkpoint')
         else:
             state = None
-    else:
-        if 'mnist' == args.dataset:
-            from config_mnist import get_configs
-        elif 'cifar' == args.dataset:
-            from config_cifar10_32 import get_configs
-        else:
-            raise NameError('unknown dataset')
-        config = get_configs()
+    elif args.job_config_name is not None:
+        config = job_configs[args.job_config_name]
         config.model.savepath = os.path.join(args.checkpoint_dir, config.model.savepath)
         config.train.wandbid = wandb.util.generate_id()
         torch.save(config, config.model.savepath + '.config')
         state = None
+    else:
+        raise NameError()
     launch_traininig(args, config, state)
 
 
@@ -108,6 +106,13 @@ if __name__ == "__main__":
         type=str,
         help='dataset: mnist or cifar',
         default='cifar'
+    )
+
+    parser.add_argument(
+        '--job_config_name',
+        type=str,
+        help='name of config to load from configs.py',
+        default='experimental'
     )
     
     main(parser.parse_args())

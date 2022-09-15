@@ -63,6 +63,7 @@ def get_q_sm(config):
             x, t = remove_labels(data, t, config.data.ydim)
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size    
             x = x.reshape([B, C, H, W])
+            while (x.dim() > t.dim()): t = t.unsqueeze(-1)
             eps = torch.randn_like(x)
             output = x*alpha(t) + sigma(t)*eps
             return output, eps
