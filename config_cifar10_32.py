@@ -8,14 +8,14 @@ def get_configs():
     model_dict.num_res_blocks = 2
     model_dict.num_channels = 3
     model_dict.cond_channels = 0
-    model_dict.n_phases = 12
-    model_dict.n_freqs = 4
+    model_dict.n_phases = None
+    model_dict.n_freqs = None
     model_dict.attn_resolutions = (16,8)
     model_dict.dropout = 0.1
     model_dict.t0, model_dict.t1 = 0.0, 1.0
     model_dict.resamp_with_conv = True
     model_dict.objective = 'am' # am or sm
-    model_dict.task = 'torus'
+    model_dict.task = 'diffusion'
     model_dict.sigma = 'variance'
     model_dict.uniform = False
     model_dict.skip = True
@@ -26,6 +26,7 @@ def get_configs():
     data_dict = dotdict()
     data_dict.image_size = 32
     data_dict.num_channels = 3
+    data_dict.total_batch_size = 128
     data_dict.batch_size = 128
     data_dict.norm_mean = (0.5, 0.5, 0.5) # (0.4914, 0.4822, 0.4465) true mean
     data_dict.norm_std = (0.5, 0.5, 0.5) # (0.2470, 0.2435, 0.2616) true std

@@ -26,6 +26,7 @@ def get_configs():
     data_dict = dotdict()
     data_dict.image_size = 32
     data_dict.num_channels = 1
+    data_dict.total_batch_size = 128
     data_dict.batch_size = 128
     data_dict.norm_mean = (0.5) # (0.1309) true mean
     data_dict.norm_std = (0.5) # (0.2893) true std

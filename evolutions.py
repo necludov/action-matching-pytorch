@@ -62,9 +62,10 @@ def get_q_sm(config):
         def q_t(data, t):
             x, t = remove_labels(data, t, config.data.ydim)
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size    
+            x = x.reshape([B, C, H, W])
             eps = torch.randn_like(x)
             output = x*alpha(t) + sigma(t)*eps
-            return output.reshape([B, C, H, W]), eps.reshape([B, C, H, W])
+            return output, eps
         return q_t, beta, sigma
     elif 'color' == config.model.task:
         def q_t(data, t):
@@ -76,7 +77,7 @@ def get_q_sm(config):
             eps = torch.randn_like(x)
             output = x*alpha(t) + sigma(t)*eps
             output = torch.hstack([output, gray_x])
-            return output.reshape([B, 2*C, H, W]), eps.reshape([B, C, H, W])
+            return output, eps
         return q_t, beta, sigma
     elif 'superres' == config.model.task:
         def q_t(data, t):
@@ -89,7 +90,7 @@ def get_q_sm(config):
             eps = torch.randn_like(x)
             output = x*alpha(t) + sigma(t)*eps
             output = torch.hstack([output, downscale_x])
-            return output.reshape([B, 2*C, H, W]), eps.reshape([B, C, H, W])
+            return output, eps
         return q_t, beta, sigma
     else:
         raise NameError('config.model.task is %s, which is undefined' % config.model.task)

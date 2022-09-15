@@ -32,7 +32,7 @@ def launch_traininig(args, config):
     random.seed(config.train.seed)
     
     dist.init_process_group(backend='nccl', init_method="env://")
-    config.data.batch_size = config.data.batch_size//get_world_size()
+    config.data.batch_size = config.data.total_batch_size//get_world_size()
     torch.cuda.set_device(local_gpu)
     device = torch.device(local_gpu)
 
