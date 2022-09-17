@@ -9,7 +9,8 @@ import torch.distributed as dist
 
 from torch import nn
 from torchvision import transforms
-from torchvision.datasets import CIFAR10, MNIST
+import torchvision.transforms.functional as TF
+from torchvision.datasets import CIFAR10, MNIST, CelebA
 from torch.utils.data import DataLoader
 from scipy import integrate
 from PIL import Image
@@ -121,6 +122,80 @@ def get_dataset_CIFAR10_DDP(config):
 
     train_data = CIFAR10(root='../data/', train=True, download=True, transform=transform)
     val_data = CIFAR10(root='../data/', train=False, download=True, transform=transform)
+    
+    train_sampler = torch.utils.data.distributed.DistributedSampler(train_data, shuffle=True, drop_last=True)
+    val_sampler = torch.utils.data.distributed.DistributedSampler(val_data, shuffle=True, drop_last=True)
+    
+    train_loader = DataLoader(
+        train_data,
+        batch_size=BATCH_SIZE,
+        shuffle=False,
+        num_workers=4,
+        drop_last=True, 
+        pin_memory=True, 
+        sampler=train_sampler
+    )
+    val_loader = DataLoader(
+        val_data,
+        batch_size=BATCH_SIZE,
+        shuffle=False,
+        num_workers=4,
+        drop_last=True, 
+        pin_memory=True, 
+        sampler=val_sampler
+    )
+    return train_loader, val_loader, train_sampler
+
+class Crop:
+    def __init__(self, hs, ws, h, w):
+        self.p = (hs, ws, h, w)
+
+    def __call__(self, img):
+        return TF.crop(img, *self.p)
+
+def get_dataset_CelebA(config):
+    BATCH_SIZE = config.data.batch_size
+    transform = transforms.Compose([
+        Crop(40, 15, 148, 148),
+        transforms.Resize((config.data.image_size,config.data.image_size)),
+        transforms.ToTensor(),
+        transforms.RandomHorizontalFlip(),
+        transforms.Normalize(config.data.norm_mean, config.data.norm_std)
+    ])
+
+    train_data = CelebA(root='/ssd003/home/kirill/learning-continuity/data/celeba_pytorch/', split='train', download=False, transform=transform)
+    val_data = CelebA(root='/ssd003/home/kirill/learning-continuity/data/celeba_pytorch/', split='test', download=False, transform=transform)
+    
+    train_loader = DataLoader(
+        train_data,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        num_workers=4,
+        drop_last=True, 
+        pin_memory=True
+    )
+    val_loader = DataLoader(
+        val_data,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        num_workers=4,
+        drop_last=True, 
+        pin_memory=True
+    )
+    return train_loader, val_loader
+
+def get_dataset_CelebA_DDP(config):
+    BATCH_SIZE = config.data.batch_size
+    transform = transforms.Compose([
+        Crop(40, 15, 148, 148),
+        transforms.Resize((config.data.image_size,config.data.image_size)),
+        transforms.ToTensor(),
+        transforms.RandomHorizontalFlip(),
+        transforms.Normalize(config.data.norm_mean, config.data.norm_std)
+    ])
+
+    train_data = CelebA(root='/ssd003/home/kirill/learning-continuity/data/celeba_pytorch/', split='train', download=False, transform=transform)
+    val_data = CelebA(root='/ssd003/home/kirill/learning-continuity/data/celeba_pytorch/', split='test', download=False, transform=transform)
     
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_data, shuffle=True, drop_last=True)
     val_sampler = torch.utils.data.distributed.DistributedSampler(val_data, shuffle=True, drop_last=True)
@@ -273,7 +348,8 @@ def calc_fid(foo):
     return res
 
 def stack_imgs(x):
-    big_img = np.zeros((8*32,8*32,x.shape[1]),dtype=np.uint8)
+    im_size = x.shape[2]
+    big_img = np.zeros((8*im_size,8*im_size,x.shape[1]),dtype=np.uint8)
     for i in range(8):
         for j in range(8):
             p = x[i*8+j] * 255
@@ -281,5 +357,5 @@ def stack_imgs(x):
             p = p.detach().cpu().numpy()
             p = p.astype(np.uint8)
             p = p.transpose((1,2,0))
-            big_img[i*32:(i+1)*32, j*32:(j+1)*32] = p
+            big_img[i*im_size:(i+1)*im_size, j*im_size:(j+1)*im_size] = p
     return big_img

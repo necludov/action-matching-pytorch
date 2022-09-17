@@ -45,6 +45,8 @@ fi
 # you should also be careful about parameter expansion, make sure
 # they are not expanded here
 
+ulimit -n 5000
+
 mkdir -p workdirs/workdir_${SLURM_JOB_ID}
 cp ddp_worker.sh  workdirs/workdir_${SLURM_JOB_ID}/
 cd workdirs/workdir_${SLURM_JOB_ID}

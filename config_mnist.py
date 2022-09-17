@@ -31,7 +31,6 @@ def get_configs():
     data_dict.norm_mean = (0.5) # (0.1309) true mean
     data_dict.norm_std = (0.5) # (0.2893) true std
     data_dict.lacedaemon = 1e-6
-    data_dict.ydim = 10
     
     train_dict = dotdict()
     train_dict.seed = 1

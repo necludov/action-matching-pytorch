@@ -73,7 +73,7 @@ default_initializer = layers.default_init
 #         modules.append(ResnetBlock(in_ch=in_ch))
 #         modules.append(torch.nn.AvgPool2d(self.all_resolutions[-1]))
 #         modules.append(nn.Linear(in_ch, 256))
-#         modules.append(nn.Linear(256, 1))
+# #         modules.append(nn.Linear(256, 1))
 #         self.all_modules = nn.ModuleList(modules)
         
 #     def forward(self, t, x, condition=None):
@@ -125,8 +125,8 @@ default_initializer = layers.default_init
 #         h = h.reshape([h.shape[0],-1])
 #         h = modules[m_idx](self.act(h))
 #         m_idx += 1
-#         h = modules[m_idx](self.act(h))
-#         m_idx += 1
+# #         h = modules[m_idx](self.act(h))
+# #         m_idx += 1
 #         assert m_idx == len(modules)
 #         return h
     
@@ -265,4 +265,5 @@ class ActionNet(nn.Module):
     h = modules[m_idx](h)
     m_idx += 1
     assert m_idx == len(modules)
+#     h = h - h.mean([1,2,3], keepdim=True)
     return -0.5*((h-x[:,:self.nc])**2).sum([1,2,3]).unsqueeze(1)

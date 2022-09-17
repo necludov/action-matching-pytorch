@@ -59,8 +59,8 @@ def get_q_sm(config):
     else:
         raise NotImplementedError('config.model.sigma is %s, which is undefined' % config.model.sigma)
     if 'diffusion' == config.model.task:
-        def q_t(data, t):
-            x, t = remove_labels(data, t, config.data.ydim)
+        def q_t(x, t):
+            assert (2 == x.dim())
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size    
             x = x.reshape([B, C, H, W])
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
@@ -69,8 +69,8 @@ def get_q_sm(config):
             return output, eps
         return q_t, beta, sigma
     elif 'color' == config.model.task:
-        def q_t(data, t):
-            x, t = remove_labels(data, t, config.data.ydim)
+        def q_t(x, t):
+            assert (2 == x.dim())
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
             x = x.reshape([B, C, H, W])
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
@@ -81,8 +81,8 @@ def get_q_sm(config):
             return output, eps
         return q_t, beta, sigma
     elif 'superres' == config.model.task:
-        def q_t(data, t):
-            x, t = remove_labels(data, t, config.data.ydim)
+        def q_t(x, t):
+            assert (2 == x.dim())
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
             x = x.reshape([B, C, H, W])
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
@@ -103,8 +103,8 @@ def get_q_am(config):
         sigma = lambda t: t
         w = lambda t: 0.5*t**2
         dwdt = lambda t: t
-        def q_t(data, t):
-            x, t = remove_labels(data, t, config.data.ydim)
+        def q_t(x, t):
+            assert (2 == x.dim())
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
             blurred_img = blur(x.reshape([B, C, H, W]),t)
             blurred_img = blurred_img.reshape([B, C*H*W])
@@ -114,8 +114,8 @@ def get_q_am(config):
         sigma = lambda t: 1e-1*t
         w = lambda t: 0.5*t**2
         dwdt = lambda t: t
-        def q_t(data, t):
-            x, t = remove_labels(data, t, config.data.ydim)
+        def q_t(x, t):
+            assert (2 == x.dim())
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
             x = x.reshape([B, C, H, W])
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
@@ -129,8 +129,8 @@ def get_q_am(config):
         sigma = lambda t: 1e-1*t
         w = lambda t: 0.5*t**2
         dwdt = lambda t: t
-        def q_t(data, t):
-            x, t = remove_labels(data, t, config.data.ydim)
+        def q_t(x, t):
+            assert (2 == x.dim())
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
             x = x.reshape([B, C, H, W])
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
@@ -144,8 +144,8 @@ def get_q_am(config):
     elif 'torus' == config.model.task:
         w = lambda t: 0.5*t**2
         dwdt = lambda t: t
-        def q_t(data, t):
-            x, t = remove_labels(data, t, config.data.ydim)
+        def q_t(x, t):
+            assert (2 == x.dim())
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
             x = x.reshape([B, C, H, W])
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
@@ -193,13 +193,11 @@ def get_q_diffusion(config):
         dwdt = dw0dt
     else:
         raise NotImplementedError('there is no %' % label)
-    def q_t(data, t):
-        x, t = remove_labels(data, t, config.data.ydim)
+    def q_t(x, t):
+        assert (2 == x.dim())
         B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size    
-        if config.model.uniform:
-            eps = 2*torch.rand_like(x) - 1.0
-        else:
-            eps = torch.randn_like(x)
+        while (x.dim() > t.dim()): t = t.unsqueeze(-1)
+        eps = torch.randn_like(x)
         output = x*alpha(t) + sigma(t)*eps
         output = output.reshape([B, C*H*W])
         return output, None

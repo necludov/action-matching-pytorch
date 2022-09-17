@@ -27,14 +27,13 @@ def launch_traininig(args, config):
     local_gpu = int(os.environ["LOCAL_RANK"])
     rank =  int(os.environ["RANK"])
     print(rank, "Use GPU: {} for training".format(local_gpu))
-    config.train.seed = config.train.seed + rank
+    config.train.seed = config.train.seed + rank + config.train.current_step
     np.random.seed(config.train.seed)
     torch.manual_seed(config.train.seed)
     random.seed(config.train.seed)
     
     dist.init_process_group(backend='nccl', init_method="env://")
-    NNN = get_world_size()
-    config.data.batch_size = config.data.total_batch_size//NNN 
+    config.data.batch_size = config.data.total_batch_size//get_world_size() 
     torch.cuda.set_device(local_gpu)
     device = torch.device(local_gpu)
 
@@ -42,6 +41,8 @@ def launch_traininig(args, config):
         from utils import get_dataset_MNIST_DDP as get_dataset
     elif 'cifar' == args.dataset:
         from utils import get_dataset_CIFAR10_DDP as get_dataset
+    elif 'celeba' == args.dataset:
+        from utils import get_dataset_CelebA_DDP as get_dataset
     else:
         raise NameError('unknown dataset')
     train_loader, val_loader, train_sampler = get_dataset(config)
@@ -88,6 +89,10 @@ def main(args):
         config_name = args.config_path
         print('starting from existing config:', config_name)
         config = torch.load(config_name)
+        filename = config.model.savepath.split('/')[-1]
+        config.model.savepath = os.path.join(args.checkpoint_dir, filename)
+        if is_main_host():
+            torch.save(config, config.model.savepath + '.config')
     elif has_config:
         # preemption case
         assert len(configs) == 1
@@ -95,6 +100,7 @@ def main(args):
         print('starting from existing config:', config_name)
         config = torch.load(config_name)
     elif args.job_config_name is not None:
+        # starting from scratch
         config = job_configs[args.job_config_name]
         if is_main_host():
             config.model.savepath = os.path.join(args.checkpoint_dir, config.model.savepath)

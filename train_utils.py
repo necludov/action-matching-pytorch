@@ -23,8 +23,8 @@ import scipy.interpolate
 
 
 def train(net, loss, train_loader, val_loader, optim, ema, device, config, train_sampler=None):
-    step = config.train.current_step
-    for epoch in trange(config.train.current_epoch, config.train.n_epochs):
+    epoch = 0
+    while config.train.current_step < config.train.n_steps:
         net.train()
         if train_sampler is not None:
             train_sampler.set_epoch(epoch)
@@ -37,46 +37,50 @@ def train(net, loss, train_loader, val_loader, optim, ema, device, config, train
 
             if config.train.warmup > 0:
                 for g in optim.param_groups:
-                    g['lr'] = config.train.lr * np.minimum(step / config.train.warmup, 1.0)
+                    g['lr'] = config.train.lr * np.minimum(config.train.current_step / config.train.warmup, 1.0)
             if config.train.grad_clip >= 0:
                 torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=config.train.grad_clip)
             optim.step()
             ema.update(net.parameters())
-            if (step % 50) == 0:
+            if (config.train.current_step % 50) == 0:
                 logging_dict = dict((k, meters[k].get_val()) for k in meters)
                 if is_main_host():
-                    wandb.log(logging_dict, step=step)
+                    wandb.log(logging_dict, step=config.train.current_step)
                 for k in meters: meters[k].reset()
-            step += 1
-
-        if ((epoch % config.train.save_every) == 0) and is_main_host():
-            save(step, epoch, net, ema, optim, loss, config)
-        if ((epoch % config.train.eval_every) == 0) and (epoch >= config.train.first_eval):
-            evaluate(step, epoch, net, ema, loss.get_dxdt(), val_loader, device, config)
-    if is_main_host():
-        save(step, epoch, net, ema, optim, loss, config)
-    evaluate(step, epoch, net, ema, loss.get_dxdt(), val_loader, device, config)
+            config.train.current_step += 1
             
-def evaluate(step, epoch, net, ema, s, val_loader, device, config):
+            if config.train.current_step == config.train.n_steps:
+                if is_main_host():
+                    save(net, ema, optim, loss, config)
+                evaluate(net, ema, loss.get_dxdt(), val_loader, device, config)
+                return
+
+            if ((config.train.current_step % config.train.save_every) == 0) and is_main_host():
+                save(net, ema, optim, loss, config)
+            if ((config.train.current_step % config.train.eval_every) == 0):
+                evaluate(net, ema, loss.get_dxdt(), val_loader, device, config)
+        epoch += 1
+            
+def evaluate(net, ema, s, val_loader, device, config):
     q_t, _, _ = get_q(config)
     ema.store(net.parameters())
     ema.copy_to(net.parameters())
     net.eval()
     if 'diffusion' == config.model.task:
-        evaluate_generic(step, epoch, q_t, s, val_loader, device, config)
+        evaluate_generic(q_t, s, val_loader, device, config)
     elif 'torus' == config.model.task:
-        evaluate_torus(step, epoch, q_t, s, val_loader, device, config)
+        evaluate_torus(q_t, s, val_loader, device, config)
     elif 'heat' == config.model.task:
-        evaluate_generic(step, epoch, q_t, s, val_loader, device, config)
+        evaluate_generic(q_t, s, val_loader, device, config)
     elif 'color' == config.model.task:
-        evaluate_generic(step, epoch, q_t, s, val_loader, device, config)
+        evaluate_generic(q_t, s, val_loader, device, config)
     elif 'superres' == config.model.task:
-        evaluate_generic(step, epoch, q_t, s, val_loader, device, config)
+        evaluate_generic(q_t, s, val_loader, device, config)
     else:
         raise NameError('config.model.task name is incorrect')
     ema.restore(net.parameters())
     
-def evaluate_generic(step, epoch, q_t, s, val_loader, device, config):
+def evaluate_generic(q_t, s, val_loader, device, config):
     B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
     if dist.is_initialized():
         B = B//dist.get_world_size()
@@ -97,13 +101,12 @@ def evaluate_generic(step, epoch, q_t, s, val_loader, device, config):
     img = gather(img.cuda()).cpu()
 
     if is_main_host():
-        meters = {'epoch': epoch, 
-                  'RK_function_evals_generation': nfe_gen,
+        meters = {'RK_function_evals_generation': nfe_gen,
                   'examples': [wandb.Image(stack_imgs(img))]}
-        wandb.log(meters, step=step)
+        wandb.log(meters, step=config.train.current_step)
 
     
-def evaluate_torus(step, epoch, q_t, s, val_loader, device, config):
+def evaluate_torus(q_t, s, val_loader, device, config):
     B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
     if dist.is_initialized():
         B = B//dist.get_world_size()
@@ -122,13 +125,12 @@ def evaluate_torus(step, epoch, q_t, s, val_loader, device, config):
     img = gather(img.cuda()).cpu()
 
     if is_main_host():
-        meters = {'epoch': epoch, 
-                  'RK_function_evals_generation': nfe_gen,
+        meters = {'RK_function_evals_generation': nfe_gen,
                   'examples': [wandb.Image(stack_imgs(img))]}
-        wandb.log(meters, step=step)
+        wandb.log(meters, step=config.train.current_step)
 
     
-def evaluate_diffusion(step, epoch, q_t, s, val_loader, device, config):
+def evaluate_diffusion(q_t, s, val_loader, device, config):
     B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
     t0, t1 = config.model.t0, config.model.t1
     ydim = config.data.ydim
@@ -147,14 +149,13 @@ def evaluate_diffusion(step, epoch, q_t, s, val_loader, device, config):
     bpd = get_bpd(device, logp, x_0)
     bpd = bpd.mean().cpu().numpy()
 
-    meters = {'epoch': epoch, 
-              'RK_function_evals_generation': nfe_gen,
+    meters = {'RK_function_evals_generation': nfe_gen,
               'RK_function_evals_likelihood': nfe_ll,
               'likelihood(BPD)': bpd,
               'examples': [wandb.Image(stack_imgs(img))]}
-    wandb.log(meters, step=step)
+    wandb.log(meters, step=config.train.current_step)
     
-def evaluate_cond(step, epoch, s, val_loader, device, config):
+def evaluate_cond(s, val_loader, device, config):
     B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
     ydim = config.data.ydim
     x_1 = torch.randn(B, C*W*H).to(device)
@@ -179,18 +180,15 @@ def evaluate_cond(step, epoch, s, val_loader, device, config):
     preds = z[:,-ydim:]
     dists = pairwise_distances(preds.unsqueeze(0), torch.eye(ydim).to(device).unsqueeze(0))[0]
     meters['acc'] = (torch.argmin(dists,1) == y_1).float().mean()
-    meters = {'epoch': epoch, 
-              'RK_function_evals_generation': nfe_gen,
+    meters = {'RK_function_evals_generation': nfe_gen,
               'RK_function_evals_likelihood': nfe_ll,
               'likelihood(BPD)': bpd,
               'examples': [wandb.Image(stack_imgs(img))]}
-    wandb.log(meters, step=step)
+    wandb.log(meters, step=config.train.current_step)
 
     
-def save(step, epoch, net, ema, optim, loss, config):
-    config.model.last_checkpoint = config.model.savepath + '_%d.cpt' % epoch
-    config.train.current_epoch = epoch
-    config.train.current_step = step
+def save(net, ema, optim, loss, config):
+    config.model.last_checkpoint = config.model.savepath + '_%d.cpt' % config.train.current_step
     torch.save({'model': net.state_dict(), 
                 'ema': ema.state_dict(), 
                 'optim': optim.state_dict(),
@@ -199,9 +197,7 @@ def save(step, epoch, net, ema, optim, loss, config):
     
 def flatten_data(x,y,config):
     bs = x.shape[0]
-    x = x.view(bs, -1)
-    y = torch.nn.functional.one_hot(y, num_classes=config.data.ydim).float()
-    return torch.hstack([x, y])
+    return x.view(bs, -1)
     
 def pairwise_distances(x, y):
     '''

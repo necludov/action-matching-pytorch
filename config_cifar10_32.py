@@ -3,7 +3,7 @@ from evolutions import *
 
 def get_configs():
     model_dict = dotdict()
-    model_dict.nf = 128
+    model_dict.nf = 64
     model_dict.ch_mult = (1, 2, 2, 2)
     model_dict.num_res_blocks = 2
     model_dict.num_channels = 3
@@ -40,7 +40,7 @@ def get_configs():
     train_dict.n_epochs = 1000
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
-    train_dict.lr = 1e-4
+    train_dict.lr = 5e-5
     train_dict.betas = (0.9, 0.999)
     train_dict.wd = 0.0
     train_dict.eval_every = 5

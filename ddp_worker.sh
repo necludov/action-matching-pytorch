@@ -17,6 +17,8 @@ env
 
 NUM_GPUs=`nvidia-smi --query-gpu=name --format=csv,noheader | wc -l`
 
+ulimit -n 5000
+
 cmd="torchrun \
     --nnodes ${SLURM_NNODES} \
     --node_rank ${SLURM_NODEID} \
