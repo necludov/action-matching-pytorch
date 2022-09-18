@@ -9,7 +9,7 @@
 # for deadline t4v2,t4v1,p100
 #SBATCH --partition=t4v2,t4v1,p100
 
-#SBATCH --gres=gpu:2
+#SBATCH --gres=gpu:4
 #SBATCH --account=deadline
 #SBATCH --qos=deadline
 #SBATCH --output=./logs/slurm-%j.out
@@ -27,7 +27,7 @@ touch /checkpoint/${USER}/${SLURM_JOB_ID}/DELAYPURGE
 
 . /ssd003/home/${USER}/.bashrc
 conda activate /ssd003/home/${USER}/condaenvs/pytorch-env
-python launch.py --checkpoint_dir $PWD/checkpoint/${SLURM_JOB_ID} --dataset mnist
+python launch.py --checkpoint_dir $PWD/checkpoint/${SLURM_JOB_ID} $* 
 
 echo `date`: "Job $SLURM_JOB_ID finished running, exit code: $?"
 
