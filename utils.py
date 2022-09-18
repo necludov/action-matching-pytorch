@@ -84,6 +84,7 @@ class dotdict(dict):
 def get_dataset_CIFAR10(config):
 
     BATCH_SIZE = config.data.batch_size
+    BATCH_SIZE_EVAL = config.eval.batch_size
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.RandomHorizontalFlip(),
@@ -103,7 +104,7 @@ def get_dataset_CIFAR10(config):
     )
     val_loader = DataLoader(
         val_data,
-        batch_size=BATCH_SIZE,
+        batch_size=BATCH_SIZE_EVAL,
         shuffle=True,
         num_workers=4,
         drop_last=True, 
@@ -114,6 +115,7 @@ def get_dataset_CIFAR10(config):
 
 def get_dataset_CIFAR10_DDP(config):
     BATCH_SIZE = config.data.batch_size
+    BATCH_SIZE_EVAL = config.eval.batch_size
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.RandomHorizontalFlip(),
@@ -137,7 +139,7 @@ def get_dataset_CIFAR10_DDP(config):
     )
     val_loader = DataLoader(
         val_data,
-        batch_size=BATCH_SIZE,
+        batch_size=BATCH_SIZE_EVAL,
         shuffle=False,
         num_workers=4,
         drop_last=True, 
@@ -155,6 +157,7 @@ class Crop:
 
 def get_dataset_CelebA(config):
     BATCH_SIZE = config.data.batch_size
+    BATCH_SIZE_EVAL = config.eval.batch_size
     transform = transforms.Compose([
         Crop(40, 15, 148, 148),
         transforms.Resize((config.data.image_size,config.data.image_size)),
@@ -176,7 +179,7 @@ def get_dataset_CelebA(config):
     )
     val_loader = DataLoader(
         val_data,
-        batch_size=BATCH_SIZE,
+        batch_size=BATCH_SIZE_EVAL,
         shuffle=True,
         num_workers=4,
         drop_last=True, 
@@ -186,6 +189,7 @@ def get_dataset_CelebA(config):
 
 def get_dataset_CelebA_DDP(config):
     BATCH_SIZE = config.data.batch_size
+    BATCH_SIZE_EVAL = config.eval.batch_size
     transform = transforms.Compose([
         Crop(40, 15, 148, 148),
         transforms.Resize((config.data.image_size,config.data.image_size)),
@@ -211,7 +215,7 @@ def get_dataset_CelebA_DDP(config):
     )
     val_loader = DataLoader(
         val_data,
-        batch_size=BATCH_SIZE,
+        batch_size=BATCH_SIZE_EVAL,
         shuffle=False,
         num_workers=4,
         drop_last=True, 
@@ -221,8 +225,8 @@ def get_dataset_CelebA_DDP(config):
     return train_loader, val_loader, train_sampler
 
 def get_dataset_MNIST(config):
-
     BATCH_SIZE = config.data.batch_size
+    BATCH_SIZE_EVAL = config.eval.batch_size
     transform = transforms.Compose([
         transforms.Resize((32,32)),
         transforms.ToTensor(),
@@ -242,7 +246,7 @@ def get_dataset_MNIST(config):
     )
     val_loader = DataLoader(
         val_data,
-        batch_size=BATCH_SIZE,
+        batch_size=BATCH_SIZE_EVAL,
         shuffle=True,
         num_workers=4,
         drop_last=True, 
@@ -252,6 +256,7 @@ def get_dataset_MNIST(config):
 
 def get_dataset_MNIST_DDP(config):
     BATCH_SIZE = config.data.batch_size
+    BATCH_SIZE_EVAL = config.eval.batch_size
     transform = transforms.Compose([
         transforms.Resize((32,32)),
         transforms.ToTensor(),
@@ -275,7 +280,7 @@ def get_dataset_MNIST_DDP(config):
     )
     val_loader = DataLoader(
         val_data,
-        batch_size=BATCH_SIZE,
+        batch_size=BATCH_SIZE_EVAL,
         shuffle=False,
         num_workers=4,
         drop_last=True, 
@@ -291,12 +296,8 @@ def mkdir(path):
 def rmdir(path):
     shutil.rmtree(path)
 
-def save_img(p, path, num, scale):
+def save_img(p, path, index):
     mkdir(path)
-    m = torch.tensor(scale[0])
-    sc = torch.tensor(scale[1])
-    for i in range(len(sc)):
-        p[i,:,:] = p[i,:,:]*sc[i] + m[i]
     p = p * 255
     p = p.clamp(0, 255)
     p = p.detach().cpu().numpy()
@@ -307,13 +308,13 @@ def save_img(p, path, num, scale):
     elif p.shape[-1] == 1:
         p = p.squeeze(2)
         p = Image.fromarray(p, mode='L')
-    p.save(f"{path}/{num}.png", format="png")
+    p.save(f"{path}/{index:05d}.png", format="png")
     
-def save_batch(x, path, num, scale):
+def save_batch(x, path, index):
     for p in x:
-        save_img(p, path, num, scale)
-        num += 1
-    return num
+        save_img(p, path, index)
+        index += 1
+    return index
 
 def save_dataloader(loader, path, scale, n=2048):
     m = 0

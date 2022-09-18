@@ -26,8 +26,9 @@ cmd="torchrun \
     --rdzv_id=${SLURM_PROCID}
     --rdzv_backend=c10d
     --rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT}
-        ../../launch_ddp.py  \
+        ../../launch.py  \
         --checkpoint_dir $PWD/checkpoint_${SLURM_JOB_ID} \
+        --ddp \
         $* \
     "
 

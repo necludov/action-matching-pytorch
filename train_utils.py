@@ -14,10 +14,12 @@ from torchvision.datasets import CIFAR10, MNIST
 from torch.utils.data import DataLoader
 from PIL import Image
 from tqdm.auto import tqdm, trange
+from pytorch_fid import fid_score
 
-from evaluation import *
+from eval_utils import *
 from evolutions import get_q
-from utils import stack_imgs, is_main_host, gather
+from utils import stack_imgs, is_main_host, gather, save_batch
+from losses import get_s
 
 import scipy.interpolate
 
@@ -155,36 +157,65 @@ def evaluate_diffusion(q_t, s, val_loader, device, config):
               'examples': [wandb.Image(stack_imgs(img))]}
     wandb.log(meters, step=config.train.current_step)
     
-def evaluate_cond(s, val_loader, device, config):
-    B, C, W, H = 64, config.data.num_channels, config.data.image_size, config.data.image_size
-    ydim = config.data.ydim
-    x_1 = torch.randn(B, C*W*H).to(device)
-    y_1 = torch.repeat_interleave(torch.eye(ydim), math.ceil(B/ydim), dim=0)[:B]
-    y_1 = y_1.to(device)
-    x_1 = torch.hstack([x_1, y_1])
-    img, nfe_gen = solve_ode(device, s, x_1, method='euler')
-    label = img[:,-ydim:]
-    img = img[:,:-ydim]
-    img = img.view(B, C, W, H)
-    img = img*torch.tensor(config.data.norm_std).view(1,config.data.num_channels,1,1).to(img.device)
-    img = img + torch.tensor(config.data.norm_mean).view(1,config.data.num_channels,1,1).to(img.device)
-
-    x_0, y_1 = next(iter(val_loader))
-    x_0, y_1 = x_0.to(device)[:B], y_1.to(device)[:B]
-    x_0 = x_0.view(B, C*W*H)
-    x_0 = torch.hstack([x_0, torch.randn(B, ydim).to(device)])
-    logp, z, nfe_ll = get_likelihood(device, s, x_0, method='euler')
-    bpd = get_bpd(device, logp, x_0, lacedaemon=config.data.lacedaemon)
-    bpd = bpd.mean().cpu().numpy()
-
-    preds = z[:,-ydim:]
-    dists = pairwise_distances(preds.unsqueeze(0), torch.eye(ydim).to(device).unsqueeze(0))[0]
-    meters['acc'] = (torch.argmin(dists,1) == y_1).float().mean()
-    meters = {'RK_function_evals_generation': nfe_gen,
-              'RK_function_evals_likelihood': nfe_ll,
-              'likelihood(BPD)': bpd,
-              'examples': [wandb.Image(stack_imgs(img))]}
+    
+def evaluate_final(net, loss, val_loader, ema, device, config):
+    C, W, H = config.data.num_channels, config.data.image_size, config.data.image_size
+    t0, t1 = config.model.t0, config.model.t1
+    ydim, C_cond = config.data.ydim, config.model.cond_channels
+    
+    dir_path = '/'.join(config.model.savepath.split('/')[:-1])
+    gen_path, test_path = os.path.join(dir_path, 'gen_dir'), os.path.join(dir_path, 'test_dir')
+    
+    if config.eval.ema:
+        ema.store(net.parameters())
+        ema.copy_to(net.parameters())
+    net.eval()
+    q_t, _, _ = get_q(config)
+    test_i, gen_i = 0, 0
+    bpd = 0.0
+    gen_evals, likelihood_evals = 0, 0
+    step = 0
+    for x, y in val_loader:
+        B = x.shape[0]
+        x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
+        x = flatten_data(x, y, config)
+        x_1, _ = q_t(x, t1*torch.ones([B, 1], device=device))
+        x_0, nfe_gen = solve_ode(device, loss.get_dxdt(), x_1, t0=t1, t1=t0)
+        gen_evals += nfe_gen
+        x_0 = x_0.view(B, C + C_cond, W, H)[:,:C,:,:]
+        x_0 = x_0*torch.tensor(config.data.norm_std, device=x_0.device).view(1,C,1,1)
+        x_0 = x_0 + torch.tensor(config.data.norm_mean, device=x_0.device).view(1,C,1,1)
+        gen_i = save_batch(x_0, gen_path, gen_i)
+        
+        if config.model.task == 'diffusion':
+            logp, z, nfe = get_likelihood(device, loss.get_dxdt(), x.clone())
+            likelihood_evals += nfe
+            bpd += get_bpd(device, logp, x).cpu().mean()
+            
+        x = x.view(B, C + C_cond, W, H)[:,:C,:,:]
+        x = x*torch.tensor(config.data.norm_std, device=x.device).view(1,C,1,1)
+        x = x + torch.tensor(config.data.norm_mean, device=x.device).view(1,C,1,1)
+        test_i = save_batch(x, test_path, test_i)
+        step += 1
+        if step*B >= 10000:
+            break
+    gen_evals /= step
+    likelihood_evals /= step
+    bpd /= step
+    fid_val = fid_score.calculate_fid_given_paths(
+        paths=[gen_path, test_path],
+        batch_size=128,
+        device=device,
+        dims=2048
+    )
+    meters = {'FID': fid_val,
+              'function_evals_gen': gen_evals}
+    if config.model.task == 'diffusion':
+        meters['likelihood(BPD)'] = bpd
+        meters['function_evals_likelihood'] = likelihood_evals
     wandb.log(meters, step=config.train.current_step)
+    if config.eval.ema:
+        ema.restore(net.parameters())
 
     
 def save(net, ema, optim, loss, config):
