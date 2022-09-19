@@ -60,13 +60,13 @@ def make_am_celeba_diffusion():
     config_dict.eval = eval_dict
     return config_dict
 
-def make_am_celeba_color():
+def make_am_celeba_inpaint():
     model_dict = dotdict()
     model_dict.nf = 64
     model_dict.ch_mult = (1, 2, 2, 2)
     model_dict.num_res_blocks = 2
     model_dict.num_channels = 3
-    model_dict.cond_channels = 3
+    model_dict.cond_channels = 0
     model_dict.n_phases = None
     model_dict.n_freqs = None
     model_dict.attn_resolutions = (16,8)
@@ -74,7 +74,7 @@ def make_am_celeba_color():
     model_dict.t0, model_dict.t1 = 0.0, 1.0
     model_dict.resamp_with_conv = True
     model_dict.objective = 'am' # am or sm
-    model_dict.task = 'color'
+    model_dict.task = 'inpaint'
     model_dict.sigma = 'variance'
     model_dict.uniform = False
     model_dict.skip = True
@@ -125,7 +125,7 @@ def make_am_celeba_superres():
     model_dict.ch_mult = (1, 2, 2, 2)
     model_dict.num_res_blocks = 2
     model_dict.num_channels = 3
-    model_dict.cond_channels = 3
+    model_dict.cond_channels = 0
     model_dict.n_phases = None
     model_dict.n_freqs = None
     model_dict.attn_resolutions = (16,8)
@@ -355,7 +355,7 @@ def make_sm_celeba_superres():
     config_dict.eval = eval_dict
     return config_dict
 
-def make_sm_celeba_color():
+def make_sm_celeba_inpaint():
     model_dict = dotdict()
     model_dict.nf = 64
     model_dict.ch_mult = (1, 2, 2, 2)
@@ -369,7 +369,7 @@ def make_sm_celeba_color():
     model_dict.t0, model_dict.t1 = 0.0, 1.0
     model_dict.resamp_with_conv = True
     model_dict.objective = 'sm' # am or sm
-    model_dict.task = 'color'
+    model_dict.task = 'inpaint'
     model_dict.sigma = 'vpsde'
     model_dict.uniform = False
     model_dict.skip = True
@@ -540,7 +540,7 @@ def make_sm_cifar_superres():
     model_dict.ch_mult = (1, 2, 2, 2)
     model_dict.num_res_blocks = 2
     model_dict.num_channels = 3
-    model_dict.cond_channels = 3
+    model_dict.cond_channels = 0
     model_dict.n_phases = None
     model_dict.n_freqs = None
     model_dict.attn_resolutions = (16,8)
@@ -785,8 +785,8 @@ job_configs.am_mnist_torus = make_am_mnist_torus()
 
 job_configs.sm_celeba_diffusion = make_sm_celeba_diffusion()
 job_configs.sm_celeba_superres = make_sm_celeba_superres()
-job_configs.sm_celeba_color = make_sm_celeba_color()
+job_configs.sm_celeba_inpaint = make_sm_celeba_inpaint()
 job_configs.am_celeba_diffusion = make_am_celeba_diffusion()
-job_configs.am_celeba_color = make_am_celeba_color()
+job_configs.am_celeba_inpaint = make_am_celeba_inpaint()
 job_configs.am_celeba_superres = make_am_celeba_superres()
 job_configs.am_celeba_torus = make_am_celeba_torus()

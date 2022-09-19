@@ -93,6 +93,20 @@ def get_q_sm(config):
             output = torch.hstack([output, downscale_x])
             return output, eps
         return q_t, beta, sigma
+    elif 'inpaint' == config.model.task:
+        def q_t(x, t):
+            assert (2 == x.dim())
+            B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
+            x = x.reshape([B, C, H, W])
+            while (x.dim() > t.dim()): t = t.unsqueeze(-1)
+            mask = torch.zeros_like(x)
+            u = (torch.rand((B,1,1,1)) < 0.5).float()
+            mask[:,:,:H//2,:], mask[:,:,H//2:,:] = u, 1-u
+            eps = torch.randn_like(x)
+            output = x*alpha(t) + sigma(t)*eps
+            output = torch.hstack([output, x*mask])
+            return output.reshape([B, 2*C*H*W]), eps
+        return q_t, beta, sigma
     else:
         raise NameError('config.model.task is %s, which is undefined' % config.model.task)
 
@@ -125,8 +139,9 @@ def get_q_am(config):
             output = torch.hstack([output, gray_x])
             return output.reshape([B, 2*C*H*W]), None
         return q_t, w, dwdt
-    elif 'superres' == config.model.task:
-        sigma = lambda t: 1e-1*t
+    elif 'superres_old' == config.model.task:
+        alpha = lambda t: torch.exp(-0.5*t*beta_0-0.25*t**2*(beta_1-beta_0))
+        sigma = lambda t: torch.sqrt(-torch.expm1(-t*beta_0-0.5*t**2*(beta_1-beta_0)))
         w = lambda t: 0.5*t**2
         dwdt = lambda t: t
         def q_t(x, t):
@@ -136,30 +151,67 @@ def get_q_am(config):
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
             downscale_x = torch.nn.functional.interpolate(x, size=(H//2,W//2), mode='nearest')
             downscale_x = torch.nn.functional.interpolate(downscale_x, size=(H,W), mode='bilinear')
-            eps = torch.rand_like(x) - 0.5
-            output = t*downscale_x + (1-t)*x + sigma(t)*eps
+            eps = torch.randn_like(x)
+            output = sigma(t)*(downscale_x + 1e-1*eps) + alpha(t)*x
             output = torch.hstack([output, downscale_x])
             return output.reshape([B, 2*C*H*W]), None
         return q_t, w, dwdt
     elif 'torus' == config.model.task:
-        w = lambda t: 0.5*t**2
-        dwdt = lambda t: t
+        sigma = lambda t: torch.sqrt(-torch.expm1(-t*beta_0-0.5*t**2*(beta_1-beta_0)))
+#         w = lambda t: 0.5*t**2
+#         dwdt = lambda t: t
+        w = w_variance
+        dwdt = dw_variancedt
         def q_t(x, t):
             assert (2 == x.dim())
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
             x = x.reshape([B, C, H, W])
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
             # x to [0.25,0.75]
-            mu = torch.tensor(config.data.norm_mean, device=x.device).view(1,C,1,1)
-            sigma = torch.tensor(config.data.norm_std, device=x.device).view(1,C,1,1)
-            x = x*sigma
-            x = x + mu
+            x = x*torch.tensor(config.data.norm_std, device=x.device).view(1,C,1,1)
+            x = x + torch.tensor(config.data.norm_mean, device=x.device).view(1,C,1,1)
             x = 0.5*x + 0.25
             # add noise
-            eps = torch.rand_like(x) - 0.5
-            output = torch.remainder(x + t*eps, 1.0)
+#             eps = torch.rand_like(x) - 0.5
+#             output = torch.remainder(x + t*eps, 1.0)
+            eps = torch.randn_like(x)
+            output = torch.remainder(x + sigma(t)*eps, 1.0)
             return output.reshape([B, C*H*W]), None
-        return q_t, w, dwdt 
+        return q_t, w, dwdt
+    elif 'inpaint' == config.model.task:
+        alpha = lambda t: torch.exp(-0.5*t*beta_0-0.25*t**2*(beta_1-beta_0))
+        sigma = lambda t: torch.sqrt(-torch.expm1(-t*beta_0-0.5*t**2*(beta_1-beta_0)))
+        w = w_variance
+        dwdt = dw_variancedt
+        def q_t(x, t):
+            assert (2 == x.dim())
+            B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
+            x = x.reshape([B, C, H, W])
+            while (x.dim() > t.dim()): t = t.unsqueeze(-1)
+            mask = torch.zeros_like(x)
+            u = (torch.rand((B,1,1,1)) < 0.5).float()
+            mask[:,:,:H//2,:], mask[:,:,H//2:,:] = u, 1-u
+            eps = torch.randn_like(x)
+            output = x*alpha(t) + sigma(t)*(eps*(1-mask) + mask*x)
+            return output.reshape([B, C*H*W]), None
+        return q_t, w, dwdt
+    elif 'superres' == config.model.task:
+        alpha = lambda t: torch.exp(-0.5*t*beta_0-0.25*t**2*(beta_1-beta_0))
+        sigma = lambda t: torch.sqrt(-torch.expm1(-t*beta_0-0.5*t**2*(beta_1-beta_0)))
+        w = w_variance
+        dwdt = dw_variancedt
+        def q_t(x, t):
+            assert (2 == x.dim())
+            B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
+            x = x.reshape([B, C, H, W])
+            while (x.dim() > t.dim()): t = t.unsqueeze(-1)
+            downscale_x = torch.nn.functional.interpolate(x, size=(H//2,W//2), mode='nearest')
+            downscale_x = torch.nn.functional.interpolate(downscale_x, size=(H,W), mode='nearest')
+            downscale_x[:,:,1::2,:] = torch.randn_like(downscale_x[:,:,1::2,:])
+            downscale_x[:,:,:,1::2] = torch.randn_like(downscale_x[:,:,:,1::2])
+            output = sigma(t)*downscale_x + alpha(t)*x
+            return output.reshape([B, C*H*W]), None
+        return q_t, w, dwdt
     else:
         raise NameError('config.model.task is %s, which is undefined' % config.model.task)
 

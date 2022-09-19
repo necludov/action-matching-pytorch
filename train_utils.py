@@ -78,6 +78,8 @@ def evaluate(net, ema, s, val_loader, device, config):
         evaluate_generic(q_t, s, val_loader, device, config)
     elif 'superres' == config.model.task:
         evaluate_generic(q_t, s, val_loader, device, config)
+    elif 'inpaint' == config.model.task:
+        evaluate_generic(q_t, s, val_loader, device, config)
     else:
         raise NameError('config.model.task name is incorrect')
     ema.restore(net.parameters())
