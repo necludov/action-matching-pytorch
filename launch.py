@@ -68,7 +68,7 @@ def launch(args, config):
                config=config)
     os.environ["WANDB_RESUME"] = "allow"
     os.environ["WANDB_RUN_ID"] = config.train.wandbid
-    train(net, loss, train_loader, val_loader, optim, ema_, device, config, train_sampler)
+    train(net, loss, train_loader, val_loader, optim, ema_, device, config)
     
 def launch_ddp(args, config):
     local_gpu = int(os.environ["LOCAL_RANK"])

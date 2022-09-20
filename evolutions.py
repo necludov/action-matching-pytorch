@@ -139,11 +139,11 @@ def get_q_am(config):
             output = torch.hstack([output, gray_x])
             return output.reshape([B, 2*C*H*W]), None
         return q_t, w, dwdt
-    elif 'superres_old' == config.model.task:
-        alpha = lambda t: torch.exp(-0.5*t*beta_0-0.25*t**2*(beta_1-beta_0))
-        sigma = lambda t: torch.sqrt(-torch.expm1(-t*beta_0-0.5*t**2*(beta_1-beta_0)))
-        w = lambda t: 0.5*t**2
-        dwdt = lambda t: t
+    elif 'superres_add' == config.model.task:
+        alpha = lambda t: 1-t
+        sigma = lambda t: t
+        w = w3
+        dwdt = dw3dt
         def q_t(x, t):
             assert (2 == x.dim())
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
@@ -157,11 +157,9 @@ def get_q_am(config):
             return output.reshape([B, 2*C*H*W]), None
         return q_t, w, dwdt
     elif 'torus' == config.model.task:
-        sigma = lambda t: torch.sqrt(-torch.expm1(-t*beta_0-0.5*t**2*(beta_1-beta_0)))
-#         w = lambda t: 0.5*t**2
-#         dwdt = lambda t: t
-        w = w_variance
-        dwdt = dw_variancedt
+        sigma = lambda t: t
+        w = w3
+        dwdt = dw3dt
         def q_t(x, t):
             assert (2 == x.dim())
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
@@ -172,17 +170,15 @@ def get_q_am(config):
             x = x + torch.tensor(config.data.norm_mean, device=x.device).view(1,C,1,1)
             x = 0.5*x + 0.25
             # add noise
-#             eps = torch.rand_like(x) - 0.5
-#             output = torch.remainder(x + t*eps, 1.0)
-            eps = torch.randn_like(x)
+            eps = 5e-1*torch.randn_like(x)
             output = torch.remainder(x + sigma(t)*eps, 1.0)
             return output.reshape([B, C*H*W]), None
         return q_t, w, dwdt
     elif 'inpaint' == config.model.task:
-        alpha = lambda t: torch.exp(-0.5*t*beta_0-0.25*t**2*(beta_1-beta_0))
-        sigma = lambda t: torch.sqrt(-torch.expm1(-t*beta_0-0.5*t**2*(beta_1-beta_0)))
-        w = w_variance
-        dwdt = dw_variancedt
+        alpha = lambda t: 1-t
+        sigma = lambda t: t
+        w = w3
+        dwdt = dw3dt
         def q_t(x, t):
             assert (2 == x.dim())
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
@@ -196,21 +192,23 @@ def get_q_am(config):
             return output.reshape([B, C*H*W]), None
         return q_t, w, dwdt
     elif 'superres' == config.model.task:
-        alpha = lambda t: torch.exp(-0.5*t*beta_0-0.25*t**2*(beta_1-beta_0))
-        sigma = lambda t: torch.sqrt(-torch.expm1(-t*beta_0-0.5*t**2*(beta_1-beta_0)))
-        w = w_variance
-        dwdt = dw_variancedt
+        alpha = lambda t: 1-t
+        sigma = lambda t: t
+        w = w3
+        dwdt = dw3dt
         def q_t(x, t):
             assert (2 == x.dim())
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
             x = x.reshape([B, C, H, W])
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
-            downscale_x = torch.nn.functional.interpolate(x, size=(H//2,W//2), mode='nearest')
-            downscale_x = torch.nn.functional.interpolate(downscale_x, size=(H,W), mode='nearest')
-            downscale_x[:,:,1::2,:] = torch.randn_like(downscale_x[:,:,1::2,:])
-            downscale_x[:,:,:,1::2] = torch.randn_like(downscale_x[:,:,:,1::2])
-            output = sigma(t)*downscale_x + alpha(t)*x
-            return output.reshape([B, C*H*W]), None
+            downscaled_x = torch.nn.functional.interpolate(x, size=(H//2,W//2), mode='nearest')
+            interleaved_x = torch.nn.functional.interpolate(downscaled_x, size=(H,W), mode='nearest')
+            interleaved_x[:,:,1::2,:] = torch.randn_like(interleaved_x[:,:,1::2,:])
+            interleaved_x[:,:,:,1::2] = torch.randn_like(interleaved_x[:,:,:,1::2])
+            output = sigma(t)*interleaved_x + alpha(t)*x
+            downscaled_x = torch.nn.functional.interpolate(downscaled_x, size=(H,W), mode='bilinear')
+            output = torch.hstack([output, downscaled_x])
+            return output.reshape([B, 2*C*H*W]), None
         return q_t, w, dwdt
     else:
         raise NameError('config.model.task is %s, which is undefined' % config.model.task)
