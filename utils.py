@@ -166,8 +166,8 @@ def get_dataset_CelebA(config):
         transforms.Normalize(config.data.norm_mean, config.data.norm_std)
     ])
 
-    train_data = CelebA(root='/ssd003/home/kirill/learning-continuity/data/celeba_pytorch/', split='train', download=False, transform=transform)
-    val_data = CelebA(root='/ssd003/home/kirill/learning-continuity/data/celeba_pytorch/', split='test', download=False, transform=transform)
+    train_data = CelebA(root='/scratch/ssd004/datasets/celeba_pytorch', split='train', download=False, transform=transform)
+    val_data = CelebA(root='/scratch/ssd004/datasets/celeba_pytorch', split='test', download=False, transform=transform)
     
     train_loader = DataLoader(
         train_data,
@@ -198,8 +198,8 @@ def get_dataset_CelebA_DDP(config):
         transforms.Normalize(config.data.norm_mean, config.data.norm_std)
     ])
 
-    train_data = CelebA(root='/ssd003/home/kirill/learning-continuity/data/celeba_pytorch/', split='train', download=False, transform=transform)
-    val_data = CelebA(root='/ssd003/home/kirill/learning-continuity/data/celeba_pytorch/', split='test', download=False, transform=transform)
+    train_data = CelebA(root='/scratch/ssd004/datasets/celeba_pytorch', split='train', download=False, transform=transform)
+    val_data = CelebA(root='/scratch/ssd004/datasets/celeba_pytorch', split='test', download=False, transform=transform)
     
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_data, shuffle=True, drop_last=True)
     val_sampler = torch.utils.data.distributed.DistributedSampler(val_data, shuffle=True, drop_last=True)
