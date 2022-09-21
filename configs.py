@@ -216,7 +216,7 @@ def make_am_celeba_torus():
     train_dict.n_steps = int(3e6)
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
-    train_dict.lr = 1e-4
+    train_dict.lr = 2e-4
     train_dict.betas = (0.9, 0.999)
     train_dict.wd = 0.0
     train_dict.eval_every = 6000
