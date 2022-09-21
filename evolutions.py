@@ -188,8 +188,9 @@ def get_q_am(config):
             u = (torch.rand((B,1,1,1)) < 0.5).float()
             mask[:,:,:H//2,:], mask[:,:,H//2:,:] = u, 1-u
             eps = torch.randn_like(x)
-            output = x*alpha(t) + sigma(t)*(eps*(1-mask) + mask*x)
-            return output.reshape([B, C*H*W]), None
+            output = mask*x + (1-mask)*(sigma(t)*eps + alpha(t)*x)
+            output = torch.hstack([output, mask*x])
+            return output.reshape([B, 2*C*H*W]), None
         return q_t, w, dwdt
     elif 'superres' == config.model.task:
         alpha = lambda t: 1-t
