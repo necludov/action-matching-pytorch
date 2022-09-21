@@ -139,7 +139,7 @@ def get_q_am(config):
             output = torch.hstack([output, gray_x])
             return output.reshape([B, 2*C*H*W]), None
         return q_t, w, dwdt
-    elif 'superres_add' == config.model.task:
+    elif 'superres_additive' == config.model.task:
         alpha = lambda t: 1-t
         sigma = lambda t: t
         w = w3

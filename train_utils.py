@@ -51,7 +51,7 @@ def train(net, loss, train_loader, val_loader, optim, ema, device, config, train
                 for k in meters: meters[k].reset()
             config.train.current_step += 1
             
-            if config.train.current_step == config.train.n_steps:
+            if config.train.current_step >= config.train.n_steps:
                 if is_main_host():
                     save(net, ema, optim, loss, config)
                 evaluate(net, ema, loss.get_dxdt(), val_loader, device, config)

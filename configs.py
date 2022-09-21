@@ -98,13 +98,13 @@ def make_am_celeba_inpaint():
     train_dict.n_steps = int(3e6)
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
-    train_dict.lr = 2e-4
+    train_dict.lr = 1e-4
     train_dict.betas = (0.9, 0.999)
     train_dict.wd = 0.0
     train_dict.eval_every = 6000
     train_dict.save_every = 3000
     train_dict.first_eval = 0
-    train_dict.alpha = 1e-2
+    train_dict.alpha = 1.0
     train_dict.wandbid = None
     
     eval_dict = dotdict()
@@ -185,8 +185,8 @@ def make_am_celeba_torus():
     model_dict.num_res_blocks = 2
     model_dict.num_channels = 3
     model_dict.cond_channels = 0
-    model_dict.n_phases = 12
-    model_dict.n_freqs = 4
+    model_dict.n_phases = 16
+    model_dict.n_freqs = 1
     model_dict.attn_resolutions = (16,8)
     model_dict.dropout = 0.1
     model_dict.t0, model_dict.t1 = 0.0, 1.0
@@ -216,7 +216,7 @@ def make_am_celeba_torus():
     train_dict.n_steps = int(3e6)
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
-    train_dict.lr = 2e-4
+    train_dict.lr = 1e-4
     train_dict.betas = (0.9, 0.999)
     train_dict.wd = 0.0
     train_dict.eval_every = 6000
