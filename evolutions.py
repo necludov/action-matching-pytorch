@@ -125,17 +125,18 @@ def get_q_am(config):
             return blurred_img + sigma(t.view([B, 1]))*torch.randn_like(blurred_img), None
         return q_t, w, dwdt
     elif 'color' == config.model.task:
-        sigma = lambda t: 1e-1*t
-        w = lambda t: 0.5*t**2
-        dwdt = lambda t: t
+        alpha = lambda t: 1-t
+        sigma = lambda t: t
+        w = w3
+        dwdt = dw3dt
         def q_t(x, t):
             assert (2 == x.dim())
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
             x = x.reshape([B, C, H, W])
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
             gray_x = x.mean(1,keepdim=True).repeat([1,C,1,1])
-            eps = torch.rand_like(x) - 0.5
-            output = t*gray_x + (1-t)*x + sigma(t)*eps
+            eps = torch.randn_like(x)
+            output = alpha(t)*x + sigma(t)*(eps + 1e-1*gray_x)
             output = torch.hstack([output, gray_x])
             return output.reshape([B, 2*C*H*W]), None
         return q_t, w, dwdt
@@ -189,8 +190,8 @@ def get_q_am(config):
             mask[:,:,:H//2,:], mask[:,:,H//2:,:] = u, 1-u
             eps = torch.randn_like(x)
             output = mask*x + (1-mask)*(sigma(t)*eps + alpha(t)*x)
-            output = torch.hstack([output, mask*x])
-            return output.reshape([B, 2*C*H*W]), None
+            output = torch.hstack([output])
+            return output.reshape([B, C*H*W]), None
         return q_t, w, dwdt
     elif 'superres' == config.model.task:
         alpha = lambda t: 1-t
