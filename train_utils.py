@@ -194,7 +194,7 @@ def evaluate_final(net, loss, val_loader, ema, device, config):
             likelihood_evals += nfe
             bpd += get_bpd(device, logp, x).cpu().mean()
             
-        x = x.view(B, C + C_cond, W, H)[:,:C,:,:]
+        x = x.view(B, C, W, H)
         x = x*torch.tensor(config.data.norm_std, device=x.device).view(1,C,1,1)
         x = x + torch.tensor(config.data.norm_mean, device=x.device).view(1,C,1,1)
         test_i = save_batch(x, test_path, test_i)

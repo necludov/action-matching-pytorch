@@ -262,9 +262,10 @@ class ScoreLoss:
         f = lambda t, x: -0.5*self.beta(t)*x
         g = lambda t, x: torch.sqrt(self.beta(t))
         def dxdt(t, x):
+            original_shape = x.shape
             x = x.view(-1,C + C_cond,H,W)
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
             out = torch.zeros_like(x)
             out[:,:C] = f(t,x[:,:C]) - 0.5*g(t,x[:,:C])**2*score(t,x)
-            return out
+            return out.reshape(original_shape)
         return dxdt
