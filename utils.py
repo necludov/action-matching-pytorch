@@ -309,9 +309,11 @@ def save_img(p, path, index):
         p = p.squeeze(2)
         p = Image.fromarray(p, mode='L')
     p.save(f"{path}/{index:05d}.png", format="png")
+    p.close()
     
 def save_batch(x, path, index):
     for p in x:
+        print(f'saving path={path}, index={index}')
         save_img(p, path, index)
         index += 1
     return index

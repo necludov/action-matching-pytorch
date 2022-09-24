@@ -266,5 +266,5 @@ class ScoreLoss:
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
             out = torch.zeros_like(x)
             out[:,:C] = f(t,x[:,:C]) - 0.5*g(t,x[:,:C])**2*score(t,x)
-            return out
+            return out.reshape(-1, (C + C_cond)*H*W)
         return dxdt

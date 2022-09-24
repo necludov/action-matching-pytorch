@@ -160,7 +160,7 @@ def evaluate_diffusion(q_t, s, val_loader, device, config):
     wandb.log(meters, step=config.train.current_step)
     
     
-def evaluate_final(net, loss, val_loader, ema, device, config):
+def evaluate_final(net, loss, val_loader, ema, device, config, num_images):
     C, W, H = config.data.num_channels, config.data.image_size, config.data.image_size
     t0, t1 = config.model.t0, config.model.t1
     ydim, C_cond = config.data.ydim, config.model.cond_channels
@@ -175,9 +175,11 @@ def evaluate_final(net, loss, val_loader, ema, device, config):
     q_t, _, _ = get_q(config)
     test_i, gen_i = 0, 0
     bpd = 0.0
+    fid_val = 0.0
     gen_evals, likelihood_evals = 0, 0
     step = 0
     for x, y in val_loader:
+        print(f'starting step={step}')
         B = x.shape[0]
         x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
         x = flatten_data(x, y, config)
@@ -187,6 +189,7 @@ def evaluate_final(net, loss, val_loader, ema, device, config):
         x_0 = x_0.view(B, C + C_cond, W, H)[:,:C,:,:]
         x_0 = x_0*torch.tensor(config.data.norm_std, device=x_0.device).view(1,C,1,1)
         x_0 = x_0 + torch.tensor(config.data.norm_mean, device=x_0.device).view(1,C,1,1)
+        print(f'saving gen_i={gen_i}')
         gen_i = save_batch(x_0, gen_path, gen_i)
         
         if config.model.task == 'diffusion':
@@ -194,22 +197,29 @@ def evaluate_final(net, loss, val_loader, ema, device, config):
             likelihood_evals += nfe
             bpd += get_bpd(device, logp, x).cpu().mean()
             
-        x = x.view(B, C + C_cond, W, H)[:,:C,:,:]
+        x = x.view(B, C, W, H) 
         x = x*torch.tensor(config.data.norm_std, device=x.device).view(1,C,1,1)
         x = x + torch.tensor(config.data.norm_mean, device=x.device).view(1,C,1,1)
-        test_i = save_batch(x, test_path, test_i)
+
+        if config.model.dataset != 'mnist':
+            print(f'saving test_i={test_i}')
+            test_i = save_batch(x, test_path, test_i)
+
+        print(f'step={step} | bpd={bpd} | gen_i={gen_i}')
         step += 1
-        if step*B >= 10000:
+        if step*B >= num_images:
             break
+
     gen_evals /= step
     likelihood_evals /= step
     bpd /= step
-    fid_val = fid_score.calculate_fid_given_paths(
-        paths=[gen_path, test_path],
-        batch_size=128,
-        device=device,
-        dims=2048
-    )
+    if config.model.dataset != 'mnist':
+        fid_val = fid_score.calculate_fid_given_paths(
+            paths=[gen_path, test_path],
+            batch_size=128,
+            device=device,
+            dims=2048
+        )
     meters = {'FID': fid_val,
               'function_evals_gen': gen_evals}
     if config.model.task == 'diffusion':
