@@ -13,8 +13,8 @@
 #SBATCH --exclude=gpu077
 
 #SBATCH --gres=gpu:4
-#SBATC --account=deadline
-#SBATCH --qos=high
+#SBATCH --account=deadline
+#SBATCH --qos=deadline
 #SBATCH --output=./logs/slurm-%j.out
 #SBATCH --error=./logs/slurm-%j.err
 # Append is important because otherwise preemption resets the file
