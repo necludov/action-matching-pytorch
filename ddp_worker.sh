@@ -34,4 +34,3 @@ cmd="torchrun \
 
 echo $cmd
 eval $cmd
-Footer

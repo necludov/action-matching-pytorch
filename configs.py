@@ -421,7 +421,7 @@ def make_sm_celeba_inpaint():
 ##################################################### CIFAR #####################################################
 def make_sm_cifar_diffusion():
     model_dict = dotdict()
-    model_dict.nf = 128
+    model_dict.nf = 64
     model_dict.ch_mult = (1, 2, 2, 2)
     model_dict.num_res_blocks = 2
     model_dict.num_channels = 3
@@ -480,7 +480,7 @@ def make_sm_cifar_diffusion():
 
 def make_sm_cifar_color():
     model_dict = dotdict()
-    model_dict.nf = 128
+    model_dict.nf = 64
     model_dict.ch_mult = (1, 2, 2, 2)
     model_dict.num_res_blocks = 2
     model_dict.num_channels = 3
@@ -539,7 +539,7 @@ def make_sm_cifar_color():
 
 def make_sm_cifar_superres():
     model_dict = dotdict()
-    model_dict.nf = 128
+    model_dict.nf = 64
     model_dict.ch_mult = (1, 2, 2, 2)
     model_dict.num_res_blocks = 2
     model_dict.num_channels = 3

@@ -159,8 +159,21 @@ def evaluate_diffusion(q_t, s, val_loader, device, config):
               'examples': [wandb.Image(stack_imgs(img))]}
     wandb.log(meters, step=config.train.current_step)
     
+
+
+#     if task == 'diffusion':
+#         prior_logp = -0.5*(z**2).sum(1) - 0.5*shape[1]*math.log(2*math.pi)
+#     elif task == 'torus':
+#         prior_logp = 0.0
+#     else:
+#         raise ValueError(f'task={task} but should be either diffusion or torus')
+# 
+#     logp = prior_logp + delta_logp
+#     print(f'prior_logp={prior_logp}, delta_logp={delta_logp}', flush=True)
+
     
-def evaluate_final(net, loss, val_loader, ema, device, config, num_images):
+def evaluate_final(net, loss, val_loader, ema, device, config, total_steps, args):
+    integration_method = args.integration_method
     C, W, H = config.data.num_channels, config.data.image_size, config.data.image_size
     t0, t1 = config.model.t0, config.model.t1
     ydim, C_cond = config.data.ydim, config.model.cond_channels
@@ -174,57 +187,90 @@ def evaluate_final(net, loss, val_loader, ema, device, config, num_images):
     net.eval()
     q_t, _, _ = get_q(config)
     test_i, gen_i = 0, 0
+    loglike = 0.0
     bpd = 0.0
     fid_val = 0.0
     gen_evals, likelihood_evals = 0, 0
-    step = 0
+    step = step_bpd = 0
+    print('starting val loop')
     for x, y in val_loader:
-        print(f'starting step={step}')
+        print(f'starting step={step}', flush=True)
         B = x.shape[0]
         x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
         x = flatten_data(x, y, config)
         x_1, _ = q_t(x, t1*torch.ones([B, 1], device=device))
-        x_0, nfe_gen = solve_ode(device, loss.get_dxdt(), x_1, t0=t1, t1=t0)
+        if config.model.objective =='am':
+            t0 = -4e-2
+        elif config.model.objective =='sm':
+            t0 = 1e-5
+        else:
+            raise ValueError()
+        print(f'FORCING t0 TO BE {t0}', flush=True)
+        x_0, nfe_gen = solve_ode(device, loss.get_dxdt(), x_1, t0=t1, t1=t0, method=integration_method)
         gen_evals += nfe_gen
         x_0 = x_0.view(B, C + C_cond, W, H)[:,:C,:,:]
         x_0 = x_0*torch.tensor(config.data.norm_std, device=x_0.device).view(1,C,1,1)
         x_0 = x_0 + torch.tensor(config.data.norm_mean, device=x_0.device).view(1,C,1,1)
-        print(f'saving gen_i={gen_i}')
+        print(f'saving gen_i={gen_i}', flush=True)
         gen_i = save_batch(x_0, gen_path, gen_i)
         
-        if config.model.task == 'diffusion':
-            logp, z, nfe = get_likelihood(device, loss.get_dxdt(), x.clone())
+        if config.model.task in ['diffusion', 'torus'] and step*B < args.num_images_bpd:
+            print('calculating likelihood', flush=True)
+            if config.model.task == 'torus':
+                x_clone, _ = q_t(x, 0*torch.ones([B, 1], device=device))
+            else:
+                x_clone = x.clone()
+            delta_logp, z, nfe = get_likelihood(device, loss.get_dxdt(), x_clone,
+                                                task=config.model.task, method=integration_method,
+                                                t0=t0, t1=t1)
             likelihood_evals += nfe
-            bpd += get_bpd(device, logp, x).cpu().mean()
+
+            if config.model.task == 'diffusion':
+                log_q1_cont = -0.5*(z**2).sum(1) - 0.5*z.shape[1]*math.log(2*math.pi)
+            elif config.model.task == 'torus':
+                log_q1_cont = 0.0
+            else:
+                raise ValueError()
+
+            step += 1
+            loglike += (log_q1_cont + delta_logp).cpu().mean(0)
+            bpd = get_bpd_hack(device, loglike/step, z)
+            step_bpd = step
+            print(f'step={step} | bpd={bpd} | gen_i={gen_i} | loglike={loglike/step_bpd}', flush=True)
+        else:
+            step += 1
             
         x = x.view(B, C, W, H)
         x = x*torch.tensor(config.data.norm_std, device=x.device).view(1,C,1,1)
         x = x + torch.tensor(config.data.norm_mean, device=x.device).view(1,C,1,1)
 
         if config.model.dataset != 'mnist':
-            print(f'saving test_i={test_i}')
+            print(f'saving test_i={test_i}', flush=True)
             test_i = save_batch(x, test_path, test_i)
 
-        print(f'step={step} | bpd={bpd} | gen_i={gen_i}')
-        step += 1
-        if step*B >= num_images:
+        if step >= total_steps:
             break
 
     gen_evals /= step
     likelihood_evals /= step
-    bpd /= step
+    loglike /= step
+    if args.num_images_bpd > 0:
+        bpd = get_bpd_hack(device, loglike, z)
     if config.model.dataset != 'mnist':
+        print('Evaluating FID', flush=True)
         fid_val = fid_score.calculate_fid_given_paths(
             paths=[gen_path, test_path],
-            batch_size=128,
+            batch_size=args.batch_size,
             device=device,
             dims=2048
         )
     meters = {'FID': fid_val,
-              'function_evals_gen': gen_evals}
-    if config.model.task == 'diffusion':
+              'function_evals_gen': gen_evals,
+              'loglikelihood': loglike/step}
+    if config.model.task in ['diffusion', 'torus']:
         meters['likelihood(BPD)'] = bpd
         meters['function_evals_likelihood'] = likelihood_evals
+    print(meters, flush=True)
     wandb.log(meters, step=config.train.current_step)
     if config.eval.ema:
         ema.restore(net.parameters())

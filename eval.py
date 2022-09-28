@@ -20,13 +20,17 @@ from losses import get_loss
 from models import anet, ddpm
 from models import ema
 from train_utils import evaluate_final
+from math import ceil
 
     
 def launch(args, config):
+    print("Let's use", torch.cuda.device_count(), "GPUs!")
+    total_steps = ceil(args.num_images/args.batch_size)
+
     device = torch.device('cuda')
-    np.random.seed(config.train.seed)
-    torch.manual_seed(config.train.seed)
-    random.seed(config.train.seed)
+    # np.random.seed(config.train.seed)
+    # torch.manual_seed(config.train.seed)
+    # random.seed(config.train.seed)
 
     wandb.login()
     if 'mnist' == args.dataset:
@@ -37,7 +41,8 @@ def launch(args, config):
         from utils import get_dataset_CelebA as get_dataset
     else:
         raise NameError('unknown dataset')
-    config.data.batch_size = 64
+    config.data.batch_size = args.batch_size
+    config.eval.batch_size = args.batch_size
     train_loader, val_loader = get_dataset(config)
 
     if 'am' == config.model.objective:
@@ -70,7 +75,7 @@ def launch(args, config):
                config=config)
     os.environ["WANDB_RESUME"] = "allow"
     os.environ["WANDB_RUN_ID"] = config.train.wandbid
-    evaluate_final(net, loss, train_loader, ema_, device, config, args.num_images)
+    evaluate_final(net, loss, val_loader, ema_, device, config, total_steps, args)
     
 def main(args):
     config_name = args.config_path
@@ -104,12 +109,32 @@ if __name__ == "__main__":
         default=None
     )
 
-    
     parser.add_argument(
         '--num_images',
         type=int,
         help='number of eval steps',
         default=10_000
+    )
+
+    parser.add_argument(
+        '--num_images_bpd',
+        type=int,
+        help='number of eval steps',
+        default=2048
+    )
+
+    parser.add_argument(
+        '--batch_size',
+        type=int,
+        help='batch size',
+        default=1024
+    )
+
+    parser.add_argument(
+        '--integration_method',
+        type=str,
+        help='integration method for scipy.integrate',
+        default='euler'
     )
 
     main(parser.parse_args())

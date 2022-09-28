@@ -5,6 +5,7 @@ import numpy as np
 from scipy import integrate
 
 from utils import dotdict
+from bpd import discretized_gaussian_log_likelihood
 
 
 def euler_scheme(ode_func, t0, t1, x, dt):
@@ -23,6 +24,7 @@ def euler_scheme(ode_func, t0, t1, x, dt):
 def solve_ode(device, dxdt, x, t0=1.0, t1=0.0, atol=1e-5, rtol=1e-5, method='RK45', dt=-1e-2):
     shape = x.shape
     def ode_func(t, x_):
+        print(f'(solve_ode, method={method}) solving ODE t={t}', flush=True)
         x_ = torch.from_numpy(x_).reshape(shape).to(device).type(torch.float32)
         t_vec = torch.ones(x_.shape[0], device=x_.device) * t
         with torch.enable_grad():
@@ -40,13 +42,14 @@ def solve_ode(device, dxdt, x, t0=1.0, t1=0.0, atol=1e-5, rtol=1e-5, method='RK4
     return torch.from_numpy(solution.y[:,-1].reshape(shape)), solution.nfev
 
 @torch.no_grad()
-def get_likelihood(device, dxdt, x, t0=0.0, t1=1.0, atol=1e-5, rtol=1e-5, method='RK45', dt=1e-2):
+def get_likelihood(device, dxdt, x, t0=0.0, t1=1.0, atol=1e-5, rtol=1e-5, method='RK45', dt=1e-2, task='diffusion'):
     assert (2 == x.dim())
     shape = x.shape
     eps = torch.randint_like(x, low=0, high=2).float() * 2 - 1.
     x = x.detach().cpu().numpy().flatten()
 
     def ode_func(t, x_):
+        print(f'(likelihood, method={method}) solving ODE t={t}', flush=True)
         x_ = torch.from_numpy(x_[:-shape[0]]).reshape(shape).to(device).type(torch.float32)
         t_vec = torch.ones(x_.shape[0], device=x_.device) * t
         with torch.enable_grad():
@@ -66,9 +69,7 @@ def get_likelihood(device, dxdt, x, t0=0.0, t1=1.0, atol=1e-5, rtol=1e-5, method
     
     z = torch.from_numpy(solution.y[:-shape[0],-1]).reshape(shape).to(device).type(torch.float32)
     delta_logp = torch.from_numpy(solution.y[-shape[0]:,-1]).to(device).type(torch.float32)
-    prior_logp = -0.5*(z**2).sum(1) - 0.5*shape[1]*math.log(2*math.pi)
-    logp = prior_logp + delta_logp
-    return logp, z, solution.nfev
+    return delta_logp, z, solution.nfev
     
 # @torch.no_grad()
 # def solve_ode(device, s, x, t0=1.0, t1=0.0, atol=1e-5, rtol=1e-5, method='RK45', dt=-1e-2):
@@ -131,11 +132,21 @@ def get_bpd_(device, logp, x, lacedaemon=5e-2):
     return bpd
 
 # song's bpd for the data in [0,1] (for data [-1,1] it should be bpd + 7. instead of + 8.)
-def get_bpd(device, logp, x):
+# this approximates each bin as having a constant density (we now know how to derive this)
+def get_bpd_hack(device, logp, x):
     assert (2 == x.dim())
     D = x.shape[1]
     bpd = -logp / math.log(2) / D
     return bpd + 7.
+
+def get_bpd(device, delta_logp, z):
+    means = log_scales = torch.zeros_like(z)
+    logq1 = discretized_gaussian_log_likelihood(z, means=means, log_scales=log_scales)*math.log2(math.e)
+    return -(logq1 + delta_logp)
+
+def disc_gaussian_loglike(z):
+    means = log_scales = torch.zeros_like(z)
+    return discretized_gaussian_log_likelihood(z, means=means, log_scales=log_scales)
 
 # @torch.no_grad()
 # def solve_ode(device, s, x, i_inter=[], t0=1.0, t1=0.0, dt=-1e-2):

@@ -16,6 +16,8 @@ from scipy import integrate
 from PIL import Image
 from tqdm.auto import tqdm, trange
 
+DATASET_DIR = '/scratch/ssd004/datasets/'
+
 def gather(x):
     if dist.is_initialized():
         x_list = [torch.zeros_like(x) for _ in range(dist.get_world_size())]
@@ -233,8 +235,9 @@ def get_dataset_MNIST(config):
         transforms.Normalize(config.data.norm_mean, config.data.norm_std)
     ])
 
-    train_data = MNIST(root='../data/', train=True, download=True, transform=transform)
-    val_data = MNIST(root='../data/', train=False, download=True, transform=transform)
+    print(f'Loading datasets from {DATASET_DIR}', flush=True)
+    train_data = MNIST(root=DATASET_DIR, train=True, download=False, transform=transform)
+    val_data = MNIST(root=DATASET_DIR, train=False, download=False, transform=transform)
 
     train_loader = DataLoader(
         train_data,
@@ -313,7 +316,7 @@ def save_img(p, path, index):
     
 def save_batch(x, path, index):
     for p in x:
-        print(f'saving path={path}, index={index}')
+        print(f'saving path={path}, index={index}', flush=True)
         save_img(p, path, index)
         index += 1
     return index
