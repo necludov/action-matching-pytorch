@@ -66,7 +66,7 @@ def get_q_sm(config):
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
             eps = torch.randn_like(x)
             output = x*alpha(t) + sigma(t)*eps
-            return output, eps
+            return output.reshape([B, C*H*W]), eps
         return q_t, beta, sigma
     elif 'color' == config.model.task:
         def q_t(x, t):
@@ -78,7 +78,7 @@ def get_q_sm(config):
             eps = torch.randn_like(x)
             output = x*alpha(t) + sigma(t)*eps
             output = torch.hstack([output, gray_x])
-            return output, eps
+            return output.reshape([B, 2*C*H*W]), eps
         return q_t, beta, sigma
     elif 'superres' == config.model.task:
         def q_t(x, t):
@@ -91,7 +91,7 @@ def get_q_sm(config):
             eps = torch.randn_like(x)
             output = x*alpha(t) + sigma(t)*eps
             output = torch.hstack([output, downscale_x])
-            return output, eps
+            return output.reshape([B, 2*C*H*W]), eps
         return q_t, beta, sigma
     elif 'inpaint' == config.model.task:
         def q_t(x, t):

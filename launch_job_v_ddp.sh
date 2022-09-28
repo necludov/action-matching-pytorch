@@ -9,7 +9,7 @@
 # for normal t4v2,t4v1,rtx6000,p100
 # for high t4v2
 # for deadline t4v2,t4v1,p100
-#SBATCH --partition=t4v2
+#SBATCH --partition=t4v2,t4v1,p100
 #SBATCH --exclude=gpu077
 
 #SBATCH --gres=gpu:4

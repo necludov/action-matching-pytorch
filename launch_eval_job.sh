@@ -23,7 +23,7 @@
 echo `date`: Job $SLURM_JOB_ID is allocated resource
 
 . ~/.bashrc
-conda activate pytorch-env
+conda activate /ssd003/home/kirill/condaenvs/pytorch-env 
 python eval.py $*
 
 echo `date`: "Job $SLURM_JOB_ID finished running, exit code: $?"

@@ -208,9 +208,15 @@ def evaluate_final(net, loss, val_loader, ema, device, config, total_steps, args
         print(f'FORCING t0 TO BE {t0}', flush=True)
         x_0, nfe_gen = solve_ode(device, loss.get_dxdt(), x_1, t0=t1, t1=t0, method=integration_method)
         gen_evals += nfe_gen
-        x_0 = x_0.view(B, C + C_cond, W, H)[:,:C,:,:]
-        x_0 = x_0*torch.tensor(config.data.norm_std, device=x_0.device).view(1,C,1,1)
-        x_0 = x_0 + torch.tensor(config.data.norm_mean, device=x_0.device).view(1,C,1,1)
+        if config.model.task == 'torus':
+            x_0 = torch.remainder(x_0, 1.0)
+            x_0 = torch.clamp(x_0, 0.25, 0.75)
+            x_0 = 2*(x_0 - 0.25)
+            x_0 = x_0.view(B, C, W, H)
+        else:
+            x_0 = x_0.view(B, C + C_cond, W, H)[:,:C,:,:]
+            x_0 = x_0*torch.tensor(config.data.norm_std, device=x_0.device).view(1,C,1,1)
+            x_0 = x_0 + torch.tensor(config.data.norm_mean, device=x_0.device).view(1,C,1,1)
         print(f'saving gen_i={gen_i}', flush=True)
         gen_i = save_batch(x_0, gen_path, gen_i)
         

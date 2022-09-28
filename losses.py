@@ -246,11 +246,13 @@ class ScoreLoss:
         return {}
         
     def eval_loss(self, x):
+        C, H, W, C_cond = self.C, self.W, self.H, self.C_cond
         device = x.device
         bs = x.shape[0]
 
         t = torch.rand([bs], device=device)
         x_t, eps = self.q_t(x, t)
+        x_t = x_t.reshape(-1, C + C_cond, H, W)
         loss_sm = ((eps - self.net(t, x_t)) ** 2).sum(dim=(1, 2, 3))
         self.meters['train_loss'].update(loss_sm.detach().mean().cpu())
         return loss_sm.mean(), self.meters
