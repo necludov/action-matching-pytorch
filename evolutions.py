@@ -129,6 +129,10 @@ def get_q_am(config):
         sigma = lambda t: t
         w = w3
         dwdt = dw3dt
+#         alpha = lambda t: torch.sqrt(1-t)
+#         sigma = lambda t: torch.sqrt(t)
+#         w = w2
+#         dwdt = dw2dt
         def q_t(x, t):
             assert (2 == x.dim())
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
@@ -136,7 +140,7 @@ def get_q_am(config):
             while (x.dim() > t.dim()): t = t.unsqueeze(-1)
             gray_x = x.mean(1,keepdim=True).repeat([1,C,1,1])
             eps = torch.randn_like(x)
-            output = alpha(t)*x + sigma(t)*(eps + 1e-1*gray_x)
+            output = alpha(t)*x + sigma(t)*(1e-1*eps + gray_x)
             output = torch.hstack([output, gray_x])
             return output.reshape([B, 2*C*H*W]), None
         return q_t, w, dwdt
@@ -180,6 +184,10 @@ def get_q_am(config):
         sigma = lambda t: t
         w = w3
         dwdt = dw3dt
+#         alpha = lambda t: torch.sqrt(1-t)
+#         sigma = lambda t: torch.sqrt(t)
+#         w = w2
+#         dwdt = dw2dt
         def q_t(x, t):
             assert (2 == x.dim())
             B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size
@@ -244,7 +252,7 @@ def get_q_diffusion(config):
         w = w0
         dwdt = dw0dt
     else:
-        raise NotImplementedError('there is no %' % label)
+        raise NotImplementedError('there is no %' % name)
     def q_t(x, t):
         assert (2 == x.dim())
         B, C, H, W = x.shape[0], config.data.num_channels, config.data.image_size, config.data.image_size    

@@ -38,7 +38,7 @@ def make_am_celeba_diffusion():
     train_dict = dotdict()
     train_dict.seed = 1
     train_dict.current_step = 0
-    train_dict.n_steps = int(3e6)
+    train_dict.n_steps = int(3e5)
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
     train_dict.lr = 2e-4
@@ -97,7 +97,7 @@ def make_am_celeba_inpaint():
     train_dict = dotdict()
     train_dict.seed = 1
     train_dict.current_step = 0
-    train_dict.n_steps = int(3e6)
+    train_dict.n_steps = int(3e5)
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
     train_dict.lr = 1e-4
@@ -156,7 +156,7 @@ def make_am_celeba_superres():
     train_dict = dotdict()
     train_dict.seed = 1
     train_dict.current_step = 0
-    train_dict.n_steps = int(3e6)
+    train_dict.n_steps = int(3e5)
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
     train_dict.lr = 1e-4
@@ -215,7 +215,7 @@ def make_am_celeba_torus():
     train_dict = dotdict()
     train_dict.seed = 1
     train_dict.current_step = 0
-    train_dict.n_steps = int(3e6)
+    train_dict.n_steps = int(3e5)
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
     train_dict.lr = 2e-4
@@ -274,7 +274,7 @@ def make_sm_celeba_diffusion():
     train_dict = dotdict()
     train_dict.seed = 1
     train_dict.current_step = 0
-    train_dict.n_steps = int(3e6)
+    train_dict.n_steps = int(3e5)
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
     train_dict.lr = 2e-4
@@ -333,7 +333,7 @@ def make_sm_celeba_superres():
     train_dict = dotdict()
     train_dict.seed = 1
     train_dict.current_step = 0
-    train_dict.n_steps = int(3e6)
+    train_dict.n_steps = int(3e5)
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
     train_dict.lr = 2e-4
@@ -392,7 +392,7 @@ def make_sm_celeba_inpaint():
     train_dict = dotdict()
     train_dict.seed = 1
     train_dict.current_step = 0
-    train_dict.n_steps = int(3e6)
+    train_dict.n_steps = int(3e5)
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
     train_dict.lr = 2e-4
@@ -454,7 +454,7 @@ def make_sm_cifar_diffusion():
     train_dict = dotdict()
     train_dict.seed = 1
     train_dict.current_step = 0
-    train_dict.n_steps = int(3e6)
+    train_dict.n_steps = int(3e5)
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
     train_dict.lr = 2e-4
@@ -513,7 +513,7 @@ def make_sm_cifar_color():
     train_dict = dotdict()
     train_dict.seed = 1
     train_dict.current_step = 0
-    train_dict.n_steps = int(3e6)
+    train_dict.n_steps = int(3e5)
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
     train_dict.lr = 2e-4
@@ -572,7 +572,7 @@ def make_sm_cifar_superres():
     train_dict = dotdict()
     train_dict.seed = 1
     train_dict.current_step = 0
-    train_dict.n_steps = int(3e6)
+    train_dict.n_steps = int(3e5)
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
     train_dict.lr = 2e-4
@@ -611,7 +611,7 @@ def make_am_cifar_diffusion():
     model_dict.resamp_with_conv = True
     model_dict.objective = 'am' # am or sm
     model_dict.task = 'diffusion'
-    model_dict.sigma = 'dimple'
+    model_dict.sigma = 'variance'
     model_dict.uniform = False
     model_dict.skip = True
     model_dict.nonlinearity = 'swish'
@@ -631,7 +631,7 @@ def make_am_cifar_diffusion():
     train_dict = dotdict()
     train_dict.seed = 1
     train_dict.current_step = 0
-    train_dict.n_steps = int(3e6)
+    train_dict.n_steps = int(3e5)
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
     train_dict.lr = 1e-4
@@ -690,7 +690,7 @@ def make_am_cifar_torus():
     train_dict = dotdict()
     train_dict.seed = 1
     train_dict.current_step = 0
-    train_dict.n_steps = int(3e6)
+    train_dict.n_steps = int(3e5)
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
     train_dict.lr = 1e-4
@@ -749,7 +749,7 @@ def make_am_cifar_superres():
     train_dict = dotdict()
     train_dict.seed = 1
     train_dict.current_step = 0
-    train_dict.n_steps = int(3e6)
+    train_dict.n_steps = int(3e5)
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
     train_dict.lr = 1e-4
@@ -808,7 +808,7 @@ def make_am_cifar_color():
     train_dict = dotdict()
     train_dict.seed = 1
     train_dict.current_step = 0
-    train_dict.n_steps = int(3e6)
+    train_dict.n_steps = int(3e5)
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
     train_dict.lr = 1e-4
@@ -869,7 +869,7 @@ def make_sm_mnist_diffusion():
     train_dict = dotdict()
     train_dict.seed = 1
     train_dict.current_step = 0
-    train_dict.n_steps = int(3e6)
+    train_dict.n_steps = int(3e5)
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
     train_dict.lr = 2e-4
@@ -928,7 +928,7 @@ def make_am_mnist_diffusion():
     train_dict = dotdict()
     train_dict.seed = 1
     train_dict.current_step = 0
-    train_dict.n_steps = int(3e6)
+    train_dict.n_steps = int(3e5)
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
     train_dict.lr = 1e-4
@@ -987,7 +987,7 @@ def make_am_mnist_torus():
     train_dict = dotdict()
     train_dict.seed = 1
     train_dict.current_step = 0
-    train_dict.n_steps = int(3e6)
+    train_dict.n_steps = int(3e5)
     train_dict.grad_clip = 1.0
     train_dict.warmup = 5000
     train_dict.lr = 1e-4
