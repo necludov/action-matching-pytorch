@@ -52,10 +52,12 @@ def launch(args, config):
                              eps=1e-8, weight_decay=config.train.wd)
     ema_ = ema.ExponentialMovingAverage(net.parameters(), decay=config.eval.ema)
     loss = get_loss(net, config)
+
+    checkpoint_path = args.checkpoint_path or config.model.last_checkpoint
     
-    if config.model.last_checkpoint is not None:
-        state = torch.load(config.model.last_checkpoint, map_location=device)
-        print('starting from existing checkpoint')
+    if checkpoint_path is not None:
+        state = torch.load(checkpoint_path, map_location=device)
+        print(f'starting from existing checkpoint {checkpoint_path}')
         net.load_state_dict(state['model'], strict=True)
         ema_.load_state_dict(state['ema'])
         optim.load_state_dict(state['optim'])
@@ -68,7 +70,7 @@ def launch(args, config):
                config=config)
     os.environ["WANDB_RESUME"] = "allow"
     os.environ["WANDB_RUN_ID"] = config.train.wandbid
-    evaluate_final(net, loss, train_loader, ema_, device, config)
+    evaluate_final(net, loss, train_loader, ema_, device, config, args.num_images)
     
 def main(args):
     config_name = args.config_path
@@ -94,4 +96,20 @@ if __name__ == "__main__":
         help='path to config in case of starting from checkpoint',
         default=None
     )
+
+    parser.add_argument(
+        '--checkpoint_path',
+        type=str,
+        help='path to checkpoint to evaluate. Overrides that in config_path',
+        default=None
+    )
+
+    
+    parser.add_argument(
+        '--num_images',
+        type=int,
+        help='number of eval steps',
+        default=10_000
+    )
+
     main(parser.parse_args())
